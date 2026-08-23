@@ -1,0 +1,29 @@
+node_modules
+dist
+build
+coverage
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+Thumbs.db
+
+# Local embedded Postgres
+.pgdata
+backend/.pgdata
+backend/data
+
+# Prisma
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Frontend
+frontend/dist
+frontend/.vite
+
+# Test / OS
+*.tsbuildinfo
+.idea
+.vscode/*
+!.vscode/extensions.json

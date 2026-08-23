@@ -1,0 +1,387 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum AppointmentStatus {
+  HELD
+  BOOKED
+  CANCELLED
+  EXPIRED
+  BLOCKED
+}
+
+enum CancelReason {
+  PATIENT
+  DOCTOR
+  ADMIN
+  LEAVE
+  EXPIRED_HOLD
+  SYSTEM
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AiGenerationStatus {
+  IDLE
+  PENDING
+  READY
+  FAILED
+  RETRYING
+}
+
+enum NotificationStatus {
+  QUEUED
+  PROCESSING
+  SENT
+  FAILED
+  RETRYING
+}
+
+enum NotificationChannel {
+  EMAIL
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMATION
+  APPOINTMENT_REMINDER
+  CANCELLATION
+  RESCHEDULE
+  LEAVE_AFFECTED
+  MEDICATION_REMINDER
+  POST_VISIT_SUMMARY
+}
+
+enum CalendarSyncStatus {
+  NOT_CONNECTED
+  PENDING
+  SYNCED
+  FAILED
+  RETRYING
+  UNAVAILABLE
+}
+
+enum JobType {
+  EXPIRE_HOLDS
+  SEND_NOTIFICATION
+  GENERATE_PRE_VISIT_AI
+  GENERATE_POST_VISIT_AI
+  CALENDAR_SYNC
+  MEDICATION_REMINDER
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+enum TimelineCode {
+  SLOT_RESERVED
+  APPOINTMENT_CONFIRMED
+  AI_SUMMARY_GENERATED
+  AI_SUMMARY_FAILED
+  EMAIL_SENT
+  EMAIL_FAILED
+  CALENDAR_EVENT_CREATED
+  CALENDAR_SYNC_FAILED
+  CONSULTATION
+  PRESCRIPTION_ISSUED
+  FOLLOW_UP
+  CANCELLED
+  RESCHEDULED
+}
+
+enum SystemEventType {
+  BOOKING_CREATED
+  BOOKING_CONFLICT
+  SLOT_HELD
+  SLOT_EXPIRED
+  AI_REQUEST_FAILED
+  AI_REQUEST_SUCCEEDED
+  EMAIL_SENT
+  EMAIL_FAILED
+  EMAIL_RETRY
+  CALENDAR_SYNCED
+  CALENDAR_SYNC_FAILED
+  DOCTOR_LEAVE_CREATED
+  APPOINTMENT_CANCELLED
+  APPOINTMENT_RESCHEDULED
+}
+
+// -----------------------------------------------------------------------------
+// Identity
+// -----------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         UserRole
+  firstName    String    @map("first_name")
+  lastName     String    @map("last_name")
+  phone        String?
+  dateOfBirth  DateTime? @map("date_of_birth") @db.Date
+  isDemo       Boolean   @default(false) @map("is_demo")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  doctor                  Doctor?
+  appointmentsAsPatient   Appointment[]           @relation("PatientAppointments")
+  heldAppointments        Appointment[]           @relation("HeldBy")
+  notifications           Notification[]
+  medicationReminders     MedicationReminder[]
+
+  @@index([role])
+  @@map("users")
+}
+
+model Doctor {
+  id             String  @id @default(cuid())
+  userId         String  @unique @map("user_id")
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialization String
+  bio            String? @db.Text
+  slotDurationMin Int    @default(30) @map("slot_duration_min")
+  yearsExperience Int?   @map("years_experience")
+  isDemo         Boolean @default(false) @map("is_demo")
+
+  /// Server-side only. Never expose in API responses.
+  googleRefreshToken String?  @map("google_refresh_token") @db.Text
+  googleCalendarId   String?  @map("google_calendar_id")
+  calendarConnected  Boolean  @default(false) @map("calendar_connected")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workingHours DoctorWorkingHour[]
+  leaves       DoctorLeave[]
+  appointments Appointment[]
+
+  @@index([specialization])
+  @@map("doctors")
+}
+
+model DoctorWorkingHour {
+  id        String @id @default(cuid())
+  doctorId  String @map("doctor_id")
+  doctor    Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  /// JS Date.getDay(): 0 Sunday … 6 Saturday
+  weekday   Int
+  startTime String @map("start_time")
+  endTime   String @map("end_time")
+
+  @@unique([doctorId, weekday])
+  @@map("doctor_working_hours")
+}
+
+model DoctorLeave {
+  id        String   @id @default(cuid())
+  doctorId  String   @map("doctor_id")
+  doctor    Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([doctorId, startDate, endDate])
+  @@map("doctor_leaves")
+}
+
+// -----------------------------------------------------------------------------
+// Appointments — occupancy record for a doctor slot
+// occupancy_key is set for HELD | BOOKED | BLOCKED and null otherwise.
+// Unique (doctor_id, occupancy_key) is the concurrency control.
+// -----------------------------------------------------------------------------
+
+model Appointment {
+  id       String            @id @default(cuid())
+  doctorId String            @map("doctor_id")
+  doctor   Doctor            @relation(fields: [doctorId], references: [id])
+  patientId String?          @map("patient_id")
+  patient  User?             @relation("PatientAppointments", fields: [patientId], references: [id])
+
+  startAt DateTime @map("start_at")
+  endAt   DateTime @map("end_at")
+  status  AppointmentStatus
+
+  occupancyKey String? @map("occupancy_key")
+
+  heldByUserId  String?   @map("held_by_user_id")
+  heldBy        User?     @relation("HeldBy", fields: [heldByUserId], references: [id])
+  heldAt        DateTime? @map("held_at")
+  holdExpiresAt DateTime? @map("hold_expires_at")
+
+  symptoms String? @db.Text
+
+  aiPreVisitStatus      AiGenerationStatus @default(IDLE) @map("ai_pre_visit_status")
+  aiUrgency             Urgency?           @map("ai_urgency")
+  aiChiefComplaint      String?            @map("ai_chief_complaint")
+  aiSuggestedQuestions  Json?              @map("ai_suggested_questions")
+  aiKeySymptoms         Json?              @map("ai_key_symptoms")
+  aiPreVisitError       String?            @map("ai_pre_visit_error")
+  aiPreVisitGeneratedAt DateTime?          @map("ai_pre_visit_generated_at")
+
+  clinicalNotes String? @map("clinical_notes") @db.Text
+
+  aiPostVisitStatus  AiGenerationStatus? @map("ai_post_visit_status")
+  patientSummary     String?             @map("patient_summary") @db.Text
+  followUpSteps      Json?               @map("follow_up_steps")
+  medicationSchedule Json?               @map("medication_schedule")
+  aiPostVisitError   String?             @map("ai_post_visit_error")
+
+  googleEventId      String?            @map("google_event_id")
+  calendarSyncStatus CalendarSyncStatus @default(NOT_CONNECTED) @map("calendar_sync_status")
+  calendarSyncError  String?            @map("calendar_sync_error")
+
+  cancelReason CancelReason? @map("cancel_reason")
+  cancelledAt  DateTime?     @map("cancelled_at")
+
+  rescheduledFromId String? @map("rescheduled_from_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  timeline            AppointmentTimelineEvent[]
+  prescriptions       Prescription[]
+  medicationReminders MedicationReminder[]
+  notifications       Notification[]
+
+  @@unique([doctorId, occupancyKey], map: "appointments_active_slot_key")
+  @@index([doctorId, startAt])
+  @@index([patientId, startAt])
+  @@index([status, holdExpiresAt])
+  @@index([status, startAt])
+  @@map("appointments")
+}
+
+model AppointmentTimelineEvent {
+  id            String       @id @default(cuid())
+  appointmentId String       @map("appointment_id")
+  appointment   Appointment  @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  code          TimelineCode
+  label         String
+  occurredAt    DateTime     @default(now()) @map("occurred_at")
+  metadata      Json?
+
+  @@index([appointmentId, occurredAt])
+  @@map("appointment_timeline_events")
+}
+
+model Prescription {
+  id            String      @id @default(cuid())
+  appointmentId String      @map("appointment_id")
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  items         Json
+  notes         String?     @db.Text
+  createdAt     DateTime    @default(now()) @map("created_at")
+
+  @@map("prescriptions")
+}
+
+model MedicationReminder {
+  id             String      @id @default(cuid())
+  appointmentId  String      @map("appointment_id")
+  appointment    Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patientId      String      @map("patient_id")
+  patient        User        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  medicationName String      @map("medication_name")
+  scheduleLabel  String      @map("schedule_label")
+  nextFireAt     DateTime    @map("next_fire_at")
+  lastSentAt     DateTime?   @map("last_sent_at")
+  isActive       Boolean     @default(true) @map("is_active")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  @@index([nextFireAt, isActive])
+  @@index([patientId, isActive])
+  @@map("medication_reminders")
+}
+
+model Notification {
+  id            String              @id @default(cuid())
+  userId        String              @map("user_id")
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointmentId String?             @map("appointment_id")
+  appointment   Appointment?        @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  channel       NotificationChannel @default(EMAIL)
+  type          NotificationType
+  status        NotificationStatus  @default(QUEUED)
+  toEmail       String              @map("to_email")
+  subject       String
+  body          String              @db.Text
+  retryCount    Int                 @default(0) @map("retry_count")
+  maxRetries    Int                 @default(5) @map("max_retries")
+  nextAttemptAt DateTime            @default(now()) @map("next_attempt_at")
+  lastError     String?             @map("last_error")
+  sentAt        DateTime?           @map("sent_at")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+
+  @@index([status, nextAttemptAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  type        JobType
+  status      JobStatus @default(QUEUED)
+  payload     Json
+  retryCount  Int       @default(0) @map("retry_count")
+  maxRetries  Int       @default(5) @map("max_retries")
+  availableAt DateTime  @default(now()) @map("available_at")
+  lastError   String?   @map("last_error")
+  processedAt DateTime? @map("processed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, availableAt])
+  @@index([type, status])
+  @@map("jobs")
+}
+
+model SystemEvent {
+  id          String          @id @default(cuid())
+  type        SystemEventType
+  message     String
+  actorUserId String?         @map("actor_user_id")
+  entityType  String?         @map("entity_type")
+  entityId    String?         @map("entity_id")
+  metadata    Json?
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  @@index([type, createdAt])
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@map("system_events")
+}
+
+/// Single-row heartbeat written by the background worker.
+model WorkerHeartbeat {
+  id         String   @id
+  lastSeenAt DateTime @map("last_seen_at")
+  hostname   String?
+  pid        Int?
+
+  @@map("worker_heartbeats")
+}

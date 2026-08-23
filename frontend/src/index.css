@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 36 28% 97%;
+    --foreground: 226 32% 12%;
+    --card: 40 40% 99%;
+    --card-foreground: 226 32% 12%;
+    --primary: 226 44% 22%;
+    --primary-foreground: 40 33% 98%;
+    --secondary: 168 30% 93%;
+    --secondary-foreground: 172 40% 18%;
+    --muted: 36 18% 94%;
+    --muted-foreground: 220 10% 38%;
+    --accent: 172 34% 30%;
+    --accent-foreground: 40 33% 98%;
+    --destructive: 4 72% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 34 16% 88%;
+    --input: 34 16% 88%;
+    --ring: 226 44% 22%;
+    --success: 152 38% 32%;
+    --warning: 36 80% 40%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(1200px 480px at 12% -10%, hsl(226 42% 24% / 0.06), transparent 55%),
+      radial-gradient(900px 420px at 100% 0%, hsl(172 32% 32% / 0.07), transparent 50%);
+    background-attachment: fixed;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -67,22 +67,7 @@ For active appointments, PostgreSQL enforces uniqueness on:
 ```text
 (doctor_id, occupancy_key)
 
-## Current status
 
-Working now:
-
-- JWT login, patient registration, and RBAC portals (patient, doctor, admin)
-- Record isolation: unauthorized appointment IDs return **404**, not 403
-- Appointment engine: slot generation, 5-minute holds, confirm, expire, cancel, reschedule
-- Concurrent holds: one success, the rest `SLOT_UNAVAILABLE`
-- Leave: overlapping visits can be cancelled and released; the doctor stays unbookable on leave dates
-- Optional AI pre-visit briefing and post-visit patient summary
-- Optional email (Resend or SMTP) and Google Calendar sync for **patient and doctor** — booking stays valid if they fail
-- Consultation notes, prescriptions, medication reminders, and visit completion
-- Admin system health: DATABASE, APPOINTMENT_ENGINE, AI_SERVICE, EMAIL_SERVICE, BACKGROUND_WORKER, GOOGLE_CALENDAR (`optional: true` for calendar)
-- Demo failure simulation flags live in PostgreSQL so the worker sees the same state as the API (admin-only, `DEMO_MODE=true`, disabled in production)
-- Clinic working hours and leave use `CLINIC_TIMEZONE` (default `Asia/Kolkata`); appointments are stored in UTC
-- Appointment reminders queued on confirm; cancel/reschedule invalidate or update them
 
 ## Local setup
 

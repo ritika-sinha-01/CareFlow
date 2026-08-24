@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "ignoreCommand": "echo \"CareFlow deploys from the frontend and backend projects. Set Root Directory to frontend or backend.\" && exit 0"
+}

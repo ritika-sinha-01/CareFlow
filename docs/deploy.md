@@ -20,12 +20,14 @@ Current assessment URLs (no trailing slash):
 
 ## 1. Build (API on Vercel)
 
+Create **two** Vercel projects from this repo (Root Directory `frontend` and `backend`). Do not add a third project at the repository root — a leftover root project shows up on GitHub as a generic failed `Production` environment. The root `vercel.json` skips those builds on purpose.
+
 Create a Vercel project with **Root Directory** `backend`. `backend/vercel.json` sets:
 
 ```text
 install: cd .. && npm ci --include=dev
 build:   npm run vercel-build
-crons:   GET /api/internal/worker/tick every minute (`* * * * *`)
+crons:   GET /api/internal/worker/tick once per day (`0 12 * * *`, required on Hobby)
 ```
 
 `vercel-build` runs `prisma generate`, then `prisma migrate deploy` **only when** `VERCEL_ENV=production`, then `tsc`.
@@ -69,17 +71,19 @@ The in-process loop in `src/worker.ts` **cannot run as a Vercel Function** (no l
 Compatible serverless substitute, already in `backend/vercel.json`:
 
 - Path: `/api/internal/worker/tick`
-- Schedule: `* * * * *`
+- Schedule: `0 12 * * *` (once per day). Hobby **rejects** any expression that would run more than once per day, and that rejection happens before GitHub ever shows a backend deployment.
 - Auth: Vercel sends `Authorization: Bearer $CRON_SECRET` when `CRON_SECRET` is set on the API project
 - Tick work: heartbeat, expire holds, jobs (AI + calendar), medication reminders, notification send
 - Idempotent: jobs and notifications are claimed with `updateMany` so overlapping ticks do not double-send
+
+Do **not** put `* * * * *` in `backend/vercel.json` on a Hobby project. Vercel will silently skip creating the deployment.
 
 ### Vercel plan limits (do not invent a second architecture)
 
 | Plan | What actually runs |
 |---|---|
-| **Pro** | Minute cron is allowed. After the first successful tick, `/api/health` `BACKGROUND_WORKER` is `OPERATIONAL` (Vercel default stale window is 150 seconds when `VERCEL` is set). |
-| **Hobby** | Cron jobs run **at most once per day**, even if `vercel.json` says every minute. Health will show `BACKGROUND_WORKER` `UNAVAILABLE` for most of the day unless you set `WORKER_HEARTBEAT_STALE_MS` to about 25 hours (`90000000`). Booking still works: expired holds are treated as available when listing slots, and confirm does not wait on the worker. |
+| **Pro** | You can change the cron to `* * * * *`. After the first successful tick, `/api/health` `BACKGROUND_WORKER` is `OPERATIONAL` (Vercel default stale window is 150 seconds when `VERCEL` is set). |
+| **Hobby** | Cron may run **once per day**. Health will show `BACKGROUND_WORKER` `UNAVAILABLE` for most of the day unless you set `WORKER_HEARTBEAT_STALE_MS` to about 25 hours (`90000000`). Booking still works: expired holds are treated as available when listing slots, and confirm does not wait on the worker. |
 
 Do not fake worker health. If the tick has not run inside the stale window, status is `UNAVAILABLE`.
 

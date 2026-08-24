@@ -307,7 +307,7 @@ Intended hosting (this repo is already wired this way):
 
 - **Vercel (frontend)** — Root Directory `frontend`. `vercel.json` rewrites SPA routes to `index.html`. Set `VITE_API_URL` to the API origin (`https://careflow-backend-six.vercel.app`).
 - **Vercel (API)** — Root Directory `backend`. Express is exported as a serverless function (`backend/api/index.ts`).
-- **Worker** — Vercel Cron `GET /api/internal/worker/tick` with `CRON_SECRET`. Optional Render worker (`render.yaml`) if you need the original 2-second loop. A long-lived poll loop cannot run on Vercel Functions.
+- **Worker** — Vercel Cron `GET /api/internal/worker/tick` once per day on Hobby (`0 12 * * *`) with `CRON_SECRET`. Minute cron is Pro-only and would block Hobby deploys. Optional Render worker (`render.yaml`) if you need the original 2-second loop. A long-lived poll loop cannot run on Vercel Functions.
 - **Neon** — `DATABASE_URL` pooled; `DIRECT_URL` required in production for `prisma migrate deploy`.
 
 Production API builds run `prisma migrate deploy`. Do **not** run `prisma migrate dev` or `prisma migrate reset` in production.

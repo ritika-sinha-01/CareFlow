@@ -1,6 +1,6 @@
 import type { Job, JobStatus } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
-import { nextRetryAt } from "../jobs/retry.js";
+import { dueHorizon, nextRetryAt } from "../jobs/retry.js";
 import { generatePostVisitSummary, generatePreVisitBriefing } from "./ai.service.js";
 import { syncAppointmentCalendar } from "./calendar.service.js";
 
@@ -14,10 +14,11 @@ function payloadOf(job: Job): JobPayload {
 }
 
 export async function processDueJobs(limit = 10): Promise<number> {
+  const horizon = dueHorizon();
   const due = await prisma.job.findMany({
     where: {
       status: { in: ["QUEUED", "RETRYING"] },
-      availableAt: { lte: new Date() },
+      availableAt: { lte: horizon },
     },
     orderBy: { availableAt: "asc" },
     take: limit,
@@ -25,7 +26,7 @@ export async function processDueJobs(limit = 10): Promise<number> {
 
   for (const job of due) {
     const claimed = await prisma.job.updateMany({
-      where: { id: job.id, status: { in: ["QUEUED", "RETRYING"] } },
+      where: { id: job.id, status: { in: ["QUEUED", "RETRYING"] }, availableAt: { lte: horizon } },
       data: { status: "PROCESSING" },
     });
     if (claimed.count === 0) continue;

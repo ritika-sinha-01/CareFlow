@@ -1,4 +1,18 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "";
+const configured = import.meta.env.VITE_API_URL?.trim();
+
+function resolveApiUrl(): string {
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+  if (import.meta.env.DEV) {
+    return "http://localhost:4000";
+  }
+  throw new Error(
+    "VITE_API_URL is missing. Set it to the production API origin (for example https://api.example.com) before building the frontend.",
+  );
+}
+
+const API_URL = resolveApiUrl();
 
 export type ApiSuccess<T> = {
   success: true;

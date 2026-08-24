@@ -104,40 +104,67 @@ export async function issuePrescription(
 }
 
 export async function completeConsultation(user: AuthUser, appointmentId: string) {
-  const appointment = await loadOwnedBooked(user, appointmentId);
-  if (!appointment.clinicalNotes || appointment.clinicalNotes.trim().length < 12) {
-    throw Errors.validation("Record clinical notes before sending a patient summary.");
-  }
+  const doctor = await requireDoctorRecord(user.id);
+  const appointmentIdCompleted = await prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM appointments WHERE id = ${appointmentId} FOR UPDATE
+    `;
+    if (locked.length === 0) throw Errors.appointmentNotFound();
 
-  assertTransition(appointment.status, "COMPLETED");
-  await prisma.appointment.update({
-    where: { id: appointment.id },
-    data: {
-      status: "COMPLETED",
-      aiPostVisitStatus: "PENDING",
-      aiPostVisitError: null,
-    },
-  });
+    const appointment = await tx.appointment.findUnique({
+      where: { id: appointmentId },
+      include: appointmentInclude,
+    });
+    if (!appointment || appointment.doctorId !== doctor.id) {
+      throw Errors.appointmentNotFound();
+    }
+    if (appointment.status !== "BOOKED") {
+      throw Errors.invalidAppointmentState();
+    }
+    if (!appointment.clinicalNotes || appointment.clinicalNotes.trim().length < 12) {
+      throw Errors.validation("Record clinical notes before sending a patient summary.");
+    }
 
-  const alreadyFollowUp = (appointment.timeline ?? []).some((event) => event.code === "FOLLOW_UP");
-  if (!alreadyFollowUp) {
-    await prisma.appointmentTimelineEvent.create({
+    assertTransition(appointment.status, "COMPLETED");
+    const updated = await tx.appointment.updateMany({
+      where: {
+        id: appointment.id,
+        status: "BOOKED",
+        doctorId: doctor.id,
+      },
       data: {
-        appointmentId: appointment.id,
-        code: "FOLLOW_UP",
-        label: "Patient summary requested",
+        status: "COMPLETED",
+        occupancyKey: null,
+        aiPostVisitStatus: "PENDING",
+        aiPostVisitError: null,
       },
     });
-  }
+    if (updated.count === 0) {
+      throw Errors.invalidAppointmentState();
+    }
+
+    const alreadyFollowUp = (appointment.timeline ?? []).some((event) => event.code === "FOLLOW_UP");
+    if (!alreadyFollowUp) {
+      await tx.appointmentTimelineEvent.create({
+        data: {
+          appointmentId: appointment.id,
+          code: "FOLLOW_UP",
+          label: "Patient summary requested",
+        },
+      });
+    }
+
+    return appointment.id;
+  });
 
   await prisma.job.create({
     data: {
       type: "GENERATE_POST_VISIT_AI",
-      payload: { appointmentId: appointment.id },
+      payload: { appointmentId: appointmentIdCompleted },
     },
   });
 
-  return serialized(appointment.id, "doctor");
+  return serialized(appointmentIdCompleted, "doctor");
 }
 
 function nextMorning(from = new Date()) {

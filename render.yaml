@@ -1,0 +1,83 @@
+# CareFlow Render blueprint — API + background worker on Starter.
+# Neon is the managed PostgreSQL provider.
+# Do not put secrets in this file.
+#
+# Starter does not support preDeployCommand. Automatic migrations run in the
+# API start command only (`prisma migrate deploy`). The worker never migrates.
+#
+# 1. BUILD   — buildCommand (npm ci --include=dev, Prisma generate, compile)
+# 2. MIGRATE — first part of API startCommand (prisma migrate deploy)
+# 3. API     — node backend/dist/index.js (same startCommand, after migrate)
+# 4. WORKER  — node backend/dist/worker.js (no migrate)
+
+services:
+  - type: web
+    name: careflow-api
+    runtime: node
+    plan: starter
+    autoDeploy: true
+    buildCommand: npm ci --include=dev && npm run db:generate && npm run build -w backend
+    startCommand: npm run start:api
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "false"
+      - key: ENABLE_DEMO_SIMULATION
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+  - type: worker
+    name: careflow-worker
+    runtime: node
+    plan: starter
+    autoDeploy: true
+    buildCommand: npm ci --include=dev && npm run db:generate && npm run build -w backend
+    startCommand: npm run start:worker
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: DEMO_MODE
+        value: "false"
+      - key: ENABLE_DEMO_SIMULATION
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false

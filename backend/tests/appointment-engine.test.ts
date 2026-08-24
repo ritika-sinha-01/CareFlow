@@ -6,7 +6,7 @@ import { prisma } from "../src/db/prisma.js";
 import { expireStaleHolds } from "../src/services/hold-expiry.service.js";
 import { generateSlotStarts } from "../src/services/slot.service.js";
 import { resetSimulationFlags, setSimulationFlag } from "../src/services/demo-simulation.service.js";
-import { nextClinicMonday } from "./helpers.js";
+import { clinicDateOf, nextClinicMonday } from "./helpers.js";
 
 const app = createApp();
 const password = "CareFlow!demo1";
@@ -368,5 +368,120 @@ describe("appointment engine", () => {
     await request(app)
       .post(`/api/patient/appointments/${held.body.data.id}/release`)
       .set("Authorization", `Bearer ${patientA}`);
+  });
+
+  it("releases a hold so the slot is available again", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(held.status).toBe(201);
+
+    const released = await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientA}`);
+    expect(released.status).toBe(200);
+
+    const row = await prisma.appointment.findUniqueOrThrow({ where: { id: held.body.data.id } });
+    expect(row.status).toBe("CANCELLED");
+    expect(row.occupancyKey).toBeNull();
+
+    const listed = await request(app)
+      .get(`/api/patient/doctors/${doctorId}/slots?date=${clinicDateOf(slot)}`)
+      .set("Authorization", `Bearer ${patientB}`);
+    const match = listed.body.data.slots.find((item: { startAt: string }) => item.startAt === slot.toISOString());
+    expect(match?.state).toBe("AVAILABLE");
+  });
+
+  it("does not cancel a booked visit when releaseHold runs after confirm", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(held.status).toBe(201);
+
+    const confirmed = await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/confirm`)
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ symptoms: "Visit that must survive a late hold release." });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.data.status).toBe("BOOKED");
+
+    const released = await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientA}`);
+    expect(released.status).toBe(409);
+    expect(released.body.error.code).toBe("INVALID_APPOINTMENT_STATE");
+
+    const row = await prisma.appointment.findUniqueOrThrow({ where: { id: held.body.data.id } });
+    expect(row.status).toBe("BOOKED");
+    expect(row.occupancyKey).not.toBeNull();
+
+    await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/cancel`)
+      .set("Authorization", `Bearer ${patientA}`);
+  });
+
+  it("does not let concurrent confirm and release cancel a booked visit", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(held.status).toBe(201);
+    const appointmentId = held.body.data.id as string;
+
+    const [confirm, release] = await Promise.all([
+      request(app)
+        .post(`/api/patient/appointments/${appointmentId}/confirm`)
+        .set("Authorization", `Bearer ${patientA}`)
+        .send({ symptoms: "Concurrent confirm versus hold release." }),
+      request(app)
+        .post(`/api/patient/appointments/${appointmentId}/release`)
+        .set("Authorization", `Bearer ${patientA}`),
+    ]);
+
+    const row = await prisma.appointment.findUniqueOrThrow({ where: { id: appointmentId } });
+    expect(["BOOKED", "CANCELLED"]).toContain(row.status);
+    if (row.status === "BOOKED") {
+      expect(confirm.status).toBe(200);
+      expect(row.occupancyKey).not.toBeNull();
+      expect(row.symptoms).toContain("Concurrent confirm");
+      await request(app)
+        .post(`/api/patient/appointments/${appointmentId}/cancel`)
+        .set("Authorization", `Bearer ${patientA}`);
+    } else {
+      expect(release.status).toBe(200);
+      expect(row.occupancyKey).toBeNull();
+      expect(row.symptoms).toBeNull();
+    }
+  });
+
+  it("lists an expired hold as available without waiting for the worker", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(held.status).toBe(201);
+
+    await prisma.appointment.update({
+      where: { id: held.body.data.id },
+      data: { holdExpiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const listed = await request(app)
+      .get(`/api/patient/doctors/${doctorId}/slots?date=${clinicDateOf(slot)}`)
+      .set("Authorization", `Bearer ${patientB}`);
+    expect(listed.status).toBe(200);
+    const match = listed.body.data.slots.find((item: { startAt: string }) => item.startAt === slot.toISOString());
+    expect(match?.state).toBe("AVAILABLE");
+
+    const retry = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientB}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(retry.status).toBe(201);
+    await request(app)
+      .post(`/api/patient/appointments/${retry.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientB}`);
   });
 });

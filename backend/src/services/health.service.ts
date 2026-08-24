@@ -210,6 +210,26 @@ export function deriveOverallStatus(components: HealthComponent[]): HealthStatus
   return "OPERATIONAL";
 }
 
+export function getLiveness() {
+  return {
+    status: "OK" as const,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+export async function getReadiness() {
+  const database = await checkDatabase();
+  const appointmentEngine = await checkAppointmentEngine(database.status);
+  const ready = database.status === "OPERATIONAL" && appointmentEngine.status === "OPERATIONAL";
+  return {
+    ready,
+    status: ready ? ("READY" as const) : ("NOT_READY" as const),
+    checkedAt: new Date().toISOString(),
+    clinicTimezone: env.CLINIC_TIMEZONE,
+    components: [database, appointmentEngine],
+  };
+}
+
 export async function getSystemHealth(): Promise<SystemHealth> {
   const database = await checkDatabase();
   const [appointmentEngine, worker, ai, email, calendar] = await Promise.all([

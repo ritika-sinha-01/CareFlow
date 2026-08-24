@@ -3,8 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // -----------------------------------------------------------------------------
@@ -217,7 +218,7 @@ model DoctorLeave {
 
 // -----------------------------------------------------------------------------
 // Appointments — occupancy record for a doctor slot
-// occupancy_key is set for HELD | BOOKED | BLOCKED and null otherwise.
+// occupancy_key is set for HELD | BOOKED | BLOCKED and null for CANCELLED | EXPIRED | COMPLETED.
 // Unique (doctor_id, occupancy_key) is the concurrency control.
 // -----------------------------------------------------------------------------
 

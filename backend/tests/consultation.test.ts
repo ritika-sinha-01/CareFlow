@@ -14,13 +14,16 @@ describe("consultation workflow", () => {
   let doctorToken = "";
   let otherDoctorToken = "";
   let patientToken = "";
+  let patientBToken = "";
   let appointmentId = "";
   let doctorUserId = "";
+  let doctorId = "";
+  let consultSlot = nextClinicMonday("13:00");
 
   beforeAll(async () => {
     const passwordHash = await bcrypt.hash(password, 4);
     const suffix = `${Date.now()}`;
-    const slot = nextClinicMonday("13:00");
+    const slot = consultSlot;
 
     const doctorUser = await prisma.user.create({
       data: {
@@ -37,8 +40,17 @@ describe("consultation workflow", () => {
         userId: doctorUser.id,
         specialization: "General Practice",
         slotDurationMin: 30,
+        workingHours: {
+          create: [1, 2, 3, 4, 5].map((weekday) => ({
+            weekday,
+            startTime: "09:00",
+            endTime: "17:00",
+          })),
+        },
       },
     });
+    doctorId = doctor.id;
+    consultSlot = slot;
 
     const otherUser = await prisma.user.create({
       data: {
@@ -58,6 +70,14 @@ describe("consultation workflow", () => {
       lastName: "Patient",
     });
     patientToken = patient.body.data.token;
+
+    const patientB = await request(app).post("/api/auth/register").send({
+      email: `consult.patb.${suffix}@careflow.demo`,
+      password,
+      firstName: "Second",
+      lastName: "Patient",
+    });
+    patientBToken = patientB.body.data.token;
 
     const created = await prisma.appointment.create({
       data: {
@@ -83,10 +103,10 @@ describe("consultation workflow", () => {
   });
 
   afterAll(async () => {
-    if (appointmentId) {
-      await prisma.medicationReminder.deleteMany({ where: { appointmentId } });
-      await prisma.prescription.deleteMany({ where: { appointmentId } });
-      await prisma.appointment.delete({ where: { id: appointmentId } }).catch(() => undefined);
+    if (doctorId) {
+      await prisma.medicationReminder.deleteMany({ where: { appointment: { doctorId } } });
+      await prisma.prescription.deleteMany({ where: { appointment: { doctorId } } });
+      await prisma.appointment.deleteMany({ where: { doctorId } });
     }
     if (doctorUserId) {
       await prisma.doctor.deleteMany({ where: { userId: doctorUserId } });
@@ -164,7 +184,67 @@ describe("consultation workflow", () => {
 
     const row = await prisma.appointment.findUniqueOrThrow({ where: { id: appointmentId } });
     expect(row.status).toBe("COMPLETED");
+    expect(row.occupancyKey).toBeNull();
     expect(row.clinicalNotes).toContain("Allergic rhinitis");
     expect(row.aiPostVisitStatus).toBe("FAILED");
+  });
+
+  it("frees the slot after completion so it can be booked again", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientBToken}`)
+      .send({ doctorId, startAt: consultSlot.toISOString() });
+    expect(held.status).toBe(201);
+
+    const original = await prisma.appointment.findUniqueOrThrow({ where: { id: appointmentId } });
+    expect(original.status).toBe("COMPLETED");
+    expect(original.occupancyKey).toBeNull();
+    expect(original.clinicalNotes).toContain("Allergic rhinitis");
+
+    await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientBToken}`);
+  });
+
+  it("clears leftover occupancy keys on completed visits the way production backfill does", async () => {
+    const later = nextClinicMonday("15:00");
+    const leftover = await prisma.appointment.create({
+      data: {
+        doctorId,
+        patientId: (await prisma.appointment.findUniqueOrThrow({ where: { id: appointmentId } })).patientId!,
+        startAt: later,
+        endAt: new Date(later.getTime() + 30 * 60_000),
+        status: "COMPLETED",
+        occupancyKey: activeOccupancyKey(later),
+        clinicalNotes: "Legacy completed visit that still held the occupancy key.",
+      },
+    });
+
+    await prisma.appointment.updateMany({
+      where: { doctorId, status: "COMPLETED", occupancyKey: { not: null } },
+      data: { occupancyKey: null },
+    });
+
+    const cleared = await prisma.appointment.findUniqueOrThrow({ where: { id: leftover.id } });
+    expect(cleared.status).toBe("COMPLETED");
+    expect(cleared.occupancyKey).toBeNull();
+
+    const booked = await prisma.appointment.findMany({
+      where: { doctorId, status: "BOOKED" },
+    });
+    for (const row of booked) {
+      expect(row.occupancyKey).not.toBeNull();
+    }
+
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientBToken}`)
+      .send({ doctorId, startAt: later.toISOString() });
+    expect(held.status).toBe(201);
+
+    await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientBToken}`);
+    await prisma.appointment.delete({ where: { id: leftover.id } }).catch(() => undefined);
   });
 });

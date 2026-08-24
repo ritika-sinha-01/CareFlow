@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { deriveOverallStatus, type HealthComponent } from "../src/services/health.service.js";
+import request from "supertest";
+import { createApp } from "../src/app.js";
+import { deriveOverallStatus, getLiveness, type HealthComponent } from "../src/services/health.service.js";
 
 function component(
   name: HealthComponent["name"],
@@ -44,5 +46,28 @@ describe("system health rollup", () => {
       component("GOOGLE_CALENDAR", "UNAVAILABLE", true),
     ]);
     expect(status).toBe("DEGRADED");
+  });
+});
+
+describe("liveness and readiness endpoints", () => {
+  const app = createApp();
+
+  it("reports liveness without depending on the worker or integrations", async () => {
+    expect(getLiveness().status).toBe("OK");
+    const response = await request(app).get("/api/health/live");
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("OK");
+  });
+
+  it("reports readiness from database and appointment engine only", async () => {
+    const response = await request(app).get("/api/health/ready");
+    expect([200, 503]).toContain(response.status);
+    expect(response.body.data.components.map((item: { name: string }) => item.name)).toEqual([
+      "DATABASE",
+      "APPOINTMENT_ENGINE",
+    ]);
+    expect(response.body.data.components.some((item: { name: string }) => item.name === "BACKGROUND_WORKER")).toBe(
+      false,
+    );
   });
 });

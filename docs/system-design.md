@@ -98,8 +98,8 @@ The worker process calls `processDueJobs` and `processDueNotifications` on an in
 | Token expiration | Default 8h. Expired/invalid Bearer → 401. |
 | Role in JWT | Role is not re-read from DB on each request. Revoking a role requires waiting for expiry or rotating `JWT_SECRET`. Documented limitation. |
 | Passwords | bcrypt 10. Seed/demo uses the same hasher. |
-| Secrets | `.env` is gitignored. `JWT_SECRET` min 32 chars. Google refresh tokens are stored server-side only. |
-| CORS | Allowlist `CORS_ORIGIN`; localhost any port in non-production. |
+| Secrets | `.env` is gitignored. `JWT_SECRET` min 32 chars; known placeholders are rejected in production. Google refresh tokens are stored server-side only. |
+| CORS | Allowlist `CORS_ORIGIN`; localhost any port in non-production. Production requires explicit `FRONTEND_URL` and `CORS_ORIGIN` (localhost defaults are rejected). |
 | Input validation | Zod on auth and appointment bodies. |
 | Rate limiting | Login/register 20 / 15 min / IP+email, in-memory (not shared across API processes). |
 | Error leakage | Handlers return `{ success, error: { code, message } }`. Unhandled errors are generic `INTERNAL_ERROR`. Prisma occupancy unique → `SLOT_UNAVAILABLE`. |

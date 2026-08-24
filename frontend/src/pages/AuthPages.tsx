@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/auth/AuthContext";
 import { ApiRequestError } from "@/lib/api";
+import { DEMO_UI_ENABLED } from "@/lib/demo-mode";
 import { homeForRole } from "@/lib/types";
 
 const demos = [
@@ -48,7 +49,9 @@ export function LoginPage() {
       <Card>
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
-          <CardDescription>Use your CareFlow account. Demo passwords are listed below.</CardDescription>
+          <CardDescription>
+            {DEMO_UI_ENABLED ? "Use your CareFlow account. Demo passwords are listed below." : "Use your CareFlow account."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>
@@ -87,6 +90,7 @@ export function LoginPage() {
           </p>
         </CardContent>
       </Card>
+      {DEMO_UI_ENABLED ? (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Demo accounts</CardTitle>
@@ -109,6 +113,7 @@ export function LoginPage() {
           ))}
         </CardContent>
       </Card>
+      ) : null}
     </AuthFrame>
   );
 }
@@ -207,7 +212,11 @@ function AuthFrame({ children }: { children: ReactNode }) {
             they never take the appointment down with them.
           </p>
         </div>
-        <p className="relative text-xs text-primary-foreground/60">Demo password for seeded accounts: CareFlow!demo1</p>
+        {DEMO_UI_ENABLED ? (
+          <p className="relative text-xs text-primary-foreground/60">Demo password for seeded accounts: CareFlow!demo1</p>
+        ) : (
+          <p className="relative text-xs text-primary-foreground/60">Clinic access is issued by your administrator.</p>
+        )}
       </aside>
       <div className="flex min-h-screen flex-col justify-center px-4 py-10">
         <div className="mx-auto flex w-full max-w-md flex-col gap-6">

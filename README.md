@@ -184,6 +184,7 @@ Step-by-step reviewer script: [docs/demo-guide.md](docs/demo-guide.md).
 - [AI prompts](docs/ai-prompts.md)
 - [Google Calendar setup](docs/google-calendar-setup.md)
 - [Demo guide](docs/demo-guide.md) — 13 reviewer steps
+- [Production deploy](docs/deploy.md) — Neon, Render Starter, Vercel
 
 ## Environment variables
 
@@ -193,11 +194,30 @@ Email: Resend, SMTP, or `EMAIL_PROVIDER=test` (automated tests). Google Calendar
 
 Copy `VITE_CLINIC_TIMEZONE=Asia/Kolkata` into `frontend/.env` if you want the UI timezone explicit; it already defaults to Kolkata.
 
+## Production topology (do not deploy from this change set)
+
+Intended hosting:
+
+- **Vercel** — frontend (`frontend/`, Vite). `vercel.json` rewrites SPA routes to `index.html`.
+- **Render web service (Starter)** — build: `npm ci --include=dev && npm run db:generate && npm run build -w backend`. Start: `npm run start:api` (`prisma migrate deploy`, then `node backend/dist/index.js`).
+- **Render worker (Starter)** — same build. Start: `npm run start:worker` (`node backend/dist/worker.js`). Does not migrate.
+- **Neon** — PostgreSQL. Runtime `DATABASE_URL` is the pooled URL. `DIRECT_URL` is required in production (direct URL for `prisma migrate deploy`). There is no production fallback to `DATABASE_URL`.
+
+Starter does not support `preDeployCommand`. Migrations run automatically on API start via `npm run start:api` (`prisma migrate deploy` only). Do **not** run `prisma migrate dev` or `prisma migrate reset` in production.
+
+Step-by-step: [docs/deploy.md](docs/deploy.md).
+
+Vercel build environment: `VITE_API_URL` = public Render API origin (no trailing slash). Do not leave it empty. `VITE_DEMO_MODE` is forced off in production builds.
+
+Render health check: `GET /api/health/ready` (database + occupancy index). `GET /api/health/live` is process liveness. `GET /api/health` remains the diagnostic rollup.
+
+Seed (`npm run db:seed`) refuses to run when `APP_ENV` or `NODE_ENV` is `production`.
+
 ## Architecture
 
 - `frontend/` — Vite, React, TypeScript, Tailwind, shared UI primitives
 - `backend/` — Express services, Prisma, PostgreSQL-backed worker (no Redis/Kafka)
-- Appointments use unique `(doctor_id, occupancy_key)` where `occupancy_key = startAt.toISOString()` for HELD/BOOKED/BLOCKED, and `null` when cancelled or expired
+- Appointments use unique `(doctor_id, occupancy_key)` where `occupancy_key = startAt.toISOString()` for HELD/BOOKED/BLOCKED, and `null` when cancelled, expired, or completed
 - Demo simulation, jobs, and notifications are Postgres rows shared by API and worker
 - Health checks inspect the database, occupancy index, worker heartbeat, and whether AI/email/calendar credentials exist. They do not probe live OpenAI/Google/SMTP.
 

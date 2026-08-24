@@ -1,5 +1,6 @@
 import { PrismaClient, type Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { assertDemoSeedAllowed } from "../src/config/env.ts";
 import { activeOccupancyKey } from "../src/utils/occupancy-key.ts";
 import { addCalendarDays, clinicLocalToUtc, toClinicDateInput } from "../src/utils/clinic-time.ts";
 
@@ -17,6 +18,7 @@ function weekdayHours(doctorId: string) {
 }
 
 async function main() {
+  assertDemoSeedAllowed();
   const existing = await prisma.user.findUnique({
     where: { email: "admin@careflow.demo" },
   });

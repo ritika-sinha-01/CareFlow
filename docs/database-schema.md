@@ -8,7 +8,7 @@ Prisma schema: `backend/prisma/schema.prisma`. PostgreSQL 16.
 
 - `start_at` / `end_at` timestamptz (UTC)
 - `status` `HELD | BOOKED | CANCELLED | EXPIRED | BLOCKED | COMPLETED`
-- `occupancy_key` text, unique with `doctor_id` when set
+- `occupancy_key` text, unique with `doctor_id` when set. Present for `HELD | BOOKED | BLOCKED`; null for `CANCELLED | EXPIRED | COMPLETED` so completed visits cannot block the slot.
 - Hold columns: `held_by_user_id`, `held_at`, `hold_expires_at`
 - `symptoms` preserved independently of AI columns
 - AI pre/post status, calendar sync rollup, cancel metadata

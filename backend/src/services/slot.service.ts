@@ -101,11 +101,16 @@ export async function listSlotsForDoctor(doctorId: string, dateStr: string, view
     } else if (row?.status === "BOOKED") {
       state = "BOOKED";
     } else if (row?.status === "HELD") {
-      holdExpiresAt = row.holdExpiresAt?.toISOString() ?? null;
-      remainingSeconds = row.holdExpiresAt
-        ? Math.max(0, Math.floor((row.holdExpiresAt.getTime() - now) / 1000))
-        : null;
-      state = row.heldByUserId === viewerId ? "HELD_BY_YOU" : "HELD";
+      const expired = !row.holdExpiresAt || row.holdExpiresAt.getTime() <= now;
+      if (expired) {
+        state = "AVAILABLE";
+      } else {
+        holdExpiresAt = row.holdExpiresAt?.toISOString() ?? null;
+        remainingSeconds = row.holdExpiresAt
+          ? Math.max(0, Math.floor((row.holdExpiresAt.getTime() - now) / 1000))
+          : null;
+        state = row.heldByUserId === viewerId ? "HELD_BY_YOU" : "HELD";
+      }
     }
 
     return {

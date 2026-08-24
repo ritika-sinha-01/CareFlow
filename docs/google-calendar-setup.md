@@ -44,6 +44,8 @@ Aliases that run the same callback handler (no JWT required, because Google redi
 
 Configure Google Cloud with **one** redirect URI — the value in `GOOGLE_REDIRECT_URI`. Prefer `/api/integrations/google/callback`.
 
+Production: set `GOOGLE_REDIRECT_URI` to the public API origin (Render), for example `https://<api-host>/api/integrations/google/callback`. Localhost redirect URLs are rejected when `APP_ENV` or `NODE_ENV` is `production`.
+
 Without these three variables, `GET /api/health` reports calendar **UNAVAILABLE** (“OAuth is not configured — appointments remain valid”). The health check does **not** call the live Calendar API.
 
 `CALENDAR_PROVIDER=mock` is for automated tests only.

@@ -282,30 +282,41 @@ export async function confirmHold(user: AuthUser, appointmentId: string, symptom
 
 export async function releaseHold(user: AuthUser, appointmentId: string) {
   const now = new Date();
-  const hold = await prisma.appointment.findUnique({ where: { id: appointmentId } });
-  if (!hold || hold.patientId !== user.id) {
-    throw Errors.appointmentNotFound();
-  }
-  if (hold.status !== "HELD") {
-    throw Errors.invalidAppointmentState();
-  }
+  await prisma.$transaction(async (tx) => {
+    await lockAppointment(tx, appointmentId);
+    const hold = await tx.appointment.findUnique({ where: { id: appointmentId } });
+    if (!hold || hold.patientId !== user.id) {
+      throw Errors.appointmentNotFound();
+    }
+    if (hold.status !== "HELD") {
+      throw Errors.invalidAppointmentState();
+    }
 
-  assertTransition("HELD", "CANCELLED");
-  await prisma.appointment.update({
-    where: { id: hold.id },
-    data: {
-      status: "CANCELLED",
-      occupancyKey: null,
-      cancelReason: "PATIENT",
-      cancelledAt: now,
-    },
-  });
-  await prisma.appointmentTimelineEvent.create({
-    data: {
-      appointmentId: hold.id,
-      code: "APPOINTMENT_CANCELLED",
-      label: "Reservation released",
-    },
+    assertTransition("HELD", "CANCELLED");
+    const updated = await tx.appointment.updateMany({
+      where: {
+        id: hold.id,
+        status: "HELD",
+        patientId: user.id,
+      },
+      data: {
+        status: "CANCELLED",
+        occupancyKey: null,
+        cancelReason: "PATIENT",
+        cancelledAt: now,
+      },
+    });
+    if (updated.count === 0) {
+      throw Errors.invalidAppointmentState();
+    }
+
+    await tx.appointmentTimelineEvent.create({
+      data: {
+        appointmentId: hold.id,
+        code: "APPOINTMENT_CANCELLED",
+        label: "Reservation released",
+      },
+    });
   });
 }
 

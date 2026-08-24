@@ -101,7 +101,6 @@ Administrators can:
 
 CareFlow uses a six-step booking experience rather than treating an appointment as a simple form submission.
 
-```text
 Search Doctor
      ↓
 Select Date

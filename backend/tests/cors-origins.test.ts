@@ -31,6 +31,29 @@ describe("CORS origin allowlist", () => {
     );
     expect(allowed.has("*")).toBe(false);
   });
+
+  it("allows Vercel preview hosts for the same frontend project", () => {
+    const allowed = parseAllowedOrigins(
+      "https://care-flow-frontend-eta.vercel.app",
+      "https://care-flow-frontend-eta.vercel.app",
+    );
+    expect(
+      isAllowedCorsOrigin(
+        "https://care-flow-frontend-jlxtubygi-ritika-dev.vercel.app",
+        allowed,
+        false,
+      ),
+    ).toBe(true);
+    expect(isAllowedCorsOrigin("https://unrelated-app-abc.vercel.app", allowed, false)).toBe(false);
+    expect(isAllowedCorsOrigin("https://evil.example", allowed, false)).toBe(false);
+    expect(
+      isAllowedCorsOrigin(
+        "http://care-flow-frontend-jlxtubygi-ritika-dev.vercel.app",
+        allowed,
+        false,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("CORS preflight for auth routes", () => {

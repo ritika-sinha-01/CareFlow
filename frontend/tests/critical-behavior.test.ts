@@ -6,7 +6,16 @@ import {
   remainingHoldSeconds,
   toDateInputValue,
 } from "../src/lib/dates";
+import { isVercelPreviewHost } from "../src/lib/site";
 import { canAccessRoute } from "../src/lib/types";
+
+describe("production vs preview hosts", () => {
+  it("treats hashed Vercel hosts as previews of the production app", () => {
+    expect(isVercelPreviewHost("care-flow-frontend-eta.vercel.app")).toBe(false);
+    expect(isVercelPreviewHost("care-flow-frontend-jlxtubygi-ritika-dev.vercel.app")).toBe(true);
+    expect(isVercelPreviewHost("localhost")).toBe(false);
+  });
+});
 
 describe("role-based route protection", () => {
   it("allows only matching roles", () => {

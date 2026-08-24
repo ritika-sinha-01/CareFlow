@@ -27,3 +27,6 @@ frontend/.vite
 .idea
 .vscode/*
 !.vscode/extensions.json
+
+# Generated assignment zip (recreate with git archive)
+CareFlow-source.zip

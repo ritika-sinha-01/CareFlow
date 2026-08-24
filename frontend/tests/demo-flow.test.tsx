@@ -96,6 +96,7 @@ describe("evaluator demo surfaces", () => {
     expect(screen.getByText("AI briefing (optional)")).toBeInTheDocument();
     expect(screen.getAllByText(/Optional\. Appointments still book/).length).toBeGreaterThan(0);
     expect(screen.queryByText("Tuesday · Cardiology")).not.toBeInTheDocument();
+    expect(screen.queryByText("API unreachable")).not.toBeInTheDocument();
   });
 
   it("shows booking confirmation and a graceful AI fallback from the appointment API", async () => {

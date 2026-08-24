@@ -22,9 +22,53 @@ Built for patients, doctors, and clinic administrators, CareFlow combines a six-
 
 > **AI-generated content is assistive only and is never presented as a medical diagnosis.**
 
+## Assignment submission
+
+Use these four artifacts. Do **not** submit a Vercel preview URL (`*.vercel.app` with a random hash such as `care-flow-frontend-jlxtubygi-ritika-dev`). Those hosts are not the hosted application.
+
+### 1. Source zip
+
+From the repository root (excludes `node_modules`, `.env`, and build output):
+
+```bash
+git archive --format=zip --output CareFlow-source.zip HEAD
+```
+
+That zip is the source deliverable. This repository does not use GitHub Releases.
+
+### 2. README and supporting docs
+
+This file is the setup guide. The rest of the assignment packet is:
+
+| Item | Where |
+|------|--------|
+| Environment template | [.env.example](.env.example) |
+| API documentation | [docs/api.md](docs/api.md) |
+| Database schema | [docs/database-schema.md](docs/database-schema.md) |
+| LLM prompts | [docs/ai-prompts.md](docs/ai-prompts.md) |
+| Google Calendar OAuth setup | [docs/google-calendar-setup.md](docs/google-calendar-setup.md) |
+| Local + production deploy | [docs/deploy.md](docs/deploy.md) |
+
+Local setup is in **Local setup** below. Copy `.env.example` to `backend/.env` before `npm run dev`.
+
+### 3. Hosted application URL
+
+| Surface | URL |
+|---------|-----|
+| **App (submit this)** | https://care-flow-frontend-eta.vercel.app |
+| API | https://careflow-backend-six.vercel.app |
+| Health | https://careflow-backend-six.vercel.app/api/health |
+| Public doctors | https://careflow-backend-six.vercel.app/api/doctors |
+
+Redeploy the **backend** Vercel project from the latest commit if `/api/doctors` still returns 404. Then the landing page can list the six demo clinicians.
+
+### 4. System design write-up (800 words max)
+
+[docs/system-design.md](docs/system-design.md) — section **Assignment design brief**. It covers double-booking prevention, doctor leave conflict handling, the slot hold mechanism, and notification failure handling.
+
 ## Demo
 
-Use this section for a 5–10 minute assignment evaluation. The live UI reads the real database and APIs. It does not invent clinician lists, slots, or bookings.
+Use this section for a 5–10 minute assignment evaluation **on the production URL above**. The live UI reads the real database and APIs. It does not invent clinician lists, slots, or bookings.
 
 **Frontend:** https://care-flow-frontend-eta.vercel.app  
 **API:** https://careflow-backend-six.vercel.app  

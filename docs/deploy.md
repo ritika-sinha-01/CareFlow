@@ -147,6 +147,8 @@ Required:
 - `JWT_SECRET` (unique, 32+ characters, not a placeholder)
 - `FRONTEND_URL=https://care-flow-frontend-eta.vercel.app`
 - `CORS_ORIGIN=https://care-flow-frontend-eta.vercel.app`
+
+The API also allows HTTPS Vercel preview hosts whose hostname starts with the production project prefix (`care-flow-frontend-…`). Evaluators should still use the production frontend URL, not a preview.
 - `DATABASE_URL` (Neon pooled)
 - `DIRECT_URL` (Neon direct, not pooled)
 - `DEMO_MODE=false`

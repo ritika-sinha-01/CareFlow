@@ -113,7 +113,7 @@ The worker process (`src/worker.ts`) or Vercel Cron (`GET /api/internal/worker/t
 | Role in JWT | Role is not re-read from DB on each request. Revoking a role requires waiting for expiry or rotating `JWT_SECRET`. Documented limitation. |
 | Passwords | bcrypt 10. Seed/demo uses the same hasher. |
 | Secrets | `.env` is gitignored. `JWT_SECRET` min 32 chars; known placeholders are rejected in production. Google refresh tokens are stored server-side only. |
-| CORS | Allowlist `CORS_ORIGIN`; localhost any port in non-production. Production requires explicit `FRONTEND_URL` and `CORS_ORIGIN` (localhost defaults are rejected). |
+| CORS | Allowlist `CORS_ORIGIN` plus `FRONTEND_URL`; localhost any port in non-production. Production also allows HTTPS Vercel preview hosts of the same frontend project. Localhost defaults are rejected in production. |
 | Input validation | Zod on auth and appointment bodies. |
 | Rate limiting | Login/register 20 / 15 min / IP+email, in-memory (not shared across API processes). |
 | Error leakage | Handlers return `{ success, error: { code, message } }`. Unhandled errors are generic `INTERNAL_ERROR`. Prisma occupancy unique → `SLOT_UNAVAILABLE`. |

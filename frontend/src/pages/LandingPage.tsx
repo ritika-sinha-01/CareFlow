@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiGet } from "@/lib/api";
+import { isVercelPreviewHost, PRODUCTION_APP_URL, PRODUCTION_API_URL } from "@/lib/site";
 import type { DoctorCard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +68,7 @@ export function LandingPage() {
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [doctors, setDoctors] = useState<DoctorCard[] | null>(null);
+  const previewHost = typeof window !== "undefined" && isVercelPreviewHost(window.location.hostname);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +77,13 @@ export function LandingPage() {
         if (!cancelled) setHealth(data);
       })
       .catch(() => {
-        if (!cancelled) setHealthError("The API is not reachable yet.");
+        if (!cancelled) {
+          setHealthError(
+            previewHost
+              ? `This page is a Vercel preview host. The API only answers the production app until CORS is deployed. Open ${PRODUCTION_APP_URL}`
+              : `The API at ${PRODUCTION_API_URL} is not reachable from this page.`,
+          );
+        }
       });
     apiGet<DoctorCard[]>("/api/doctors")
       .then((data) => {
@@ -87,7 +95,7 @@ export function LandingPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [previewHost]);
 
   return (
     <div className="min-h-screen">
@@ -102,6 +110,17 @@ export function LandingPage() {
           </div>
         </div>
       </header>
+
+      {previewHost ? (
+        <div className="border-b border-warning/30 bg-warning/10 px-6 py-3 text-sm">
+          <p className="mx-auto max-w-6xl">
+            This is a Vercel preview URL. Evaluators should use the hosted production app:{" "}
+            <a className="font-medium underline-offset-4 hover:underline" href={PRODUCTION_APP_URL}>
+              {PRODUCTION_APP_URL}
+            </a>
+          </p>
+        </div>
+      ) : null}
 
       <main className="mx-auto max-w-6xl px-6 py-16 md:py-24">
         <div className="grid items-start gap-12 lg:grid-cols-[1.1fr_0.9fr]">
@@ -186,7 +205,22 @@ export function LandingPage() {
               <div className="h-20 animate-pulse rounded-xl bg-muted" />
             </div>
           ) : doctors.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">No clinicians are listed yet.</p>
+            <p className="mt-4 text-sm text-muted-foreground">
+              {healthError ? (
+                <>
+                  Clinicians cannot load from this host. Use{" "}
+                  <a className="font-medium text-primary underline-offset-4 hover:underline" href={PRODUCTION_APP_URL}>
+                    {PRODUCTION_APP_URL}
+                  </a>
+                  .
+                </>
+              ) : (
+                <>
+                  No clinicians are listed yet. If this is production, redeploy the API so{" "}
+                  <code className="text-xs">GET /api/doctors</code> is live.
+                </>
+              )}
+            </p>
           ) : (
             <div className="mt-6 grid gap-3 md:grid-cols-2">
               {doctors.map((doctor) => (
@@ -230,6 +264,11 @@ export function LandingPage() {
               <CardContent className="pt-6">
                 <StatusBadge label="API unreachable" tone="danger" />
                 <p className="mt-3 text-sm text-muted-foreground">{healthError}</p>
+                <p className="mt-3 text-sm">
+                  <a className="font-medium text-primary underline-offset-4 hover:underline" href={PRODUCTION_APP_URL}>
+                    Open the hosted production app
+                  </a>
+                </p>
               </CardContent>
             </Card>
           ) : null}

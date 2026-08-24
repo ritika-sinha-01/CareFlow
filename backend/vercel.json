@@ -3,6 +3,7 @@
   "installCommand": "cd .. && npm ci --include=dev",
   "buildCommand": "npm run vercel-build",
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "crons": [{ "path": "/api/internal/worker/tick", "schedule": "* * * * *" }],
   "functions": {
     "api/index.ts": {
       "maxDuration": 60

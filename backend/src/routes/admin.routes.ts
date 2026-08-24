@@ -4,6 +4,7 @@ import { asyncHandler } from "../utils/async-handler.js";
 import {
   adminAppointmentsController,
   adminCreateDoctorController,
+  adminUpdateDoctorController,
   adminDashboardController,
   adminDoctorController,
   adminDoctorsController,
@@ -21,6 +22,7 @@ adminRouter.use(requireAuth, requireRole("ADMIN"));
 adminRouter.get("/dashboard", asyncHandler(adminDashboardController));
 adminRouter.get("/doctors", asyncHandler(adminDoctorsController));
 adminRouter.post("/doctors", asyncHandler(adminCreateDoctorController));
+adminRouter.patch("/doctors/:id", asyncHandler(adminUpdateDoctorController));
 adminRouter.get("/doctors/:id", asyncHandler(adminDoctorController));
 adminRouter.get("/appointments", asyncHandler(adminAppointmentsController));
 adminRouter.get("/appointments/:id", asyncHandler(appointmentByIdController));

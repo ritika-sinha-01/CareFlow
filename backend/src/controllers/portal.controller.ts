@@ -4,6 +4,7 @@ import {
   loginSchema,
   profileSchema,
   registerSchema,
+  updateDoctorSchema,
 } from "../validators/auth.validators.js";
 import * as authService from "../services/auth.service.js";
 import * as patientService from "../services/patient.service.js";
@@ -12,7 +13,7 @@ import * as adminService from "../services/admin.service.js";
 import { getVisibleAppointment, requireDoctorRecord } from "../services/appointment-access.service.js";
 import * as appointmentService from "../services/appointment.service.js";
 import * as slotService from "../services/slot.service.js";
-import { confirmSchema, consultationNotesSchema, holdSchema, leaveSchema, calendarConnectSchema, prescriptionSchema, rescheduleSchema, slotsQuerySchema } from "../validators/appointment.validators.js";
+import { confirmSchema, consultationNotesSchema, holdSchema, leaveSchema, ownLeaveSchema, calendarConnectSchema, prescriptionSchema, rescheduleSchema, slotsQuerySchema } from "../validators/appointment.validators.js";
 import { apiSuccess } from "../utils/api-response.js";
 import { Errors } from "../utils/app-error.js";
 import * as leaveService from "../services/leave.service.js";
@@ -107,6 +108,11 @@ export async function adminCreateDoctorController(req: Request, res: Response): 
   res.status(201).json(apiSuccess(await adminService.createDoctor(input)));
 }
 
+export async function adminUpdateDoctorController(req: Request, res: Response): Promise<void> {
+  const input = updateDoctorSchema.parse(req.body);
+  res.json(apiSuccess(await adminService.updateDoctor(routeParam(req.params.id), input)));
+}
+
 export async function adminAppointmentsController(_req: Request, res: Response): Promise<void> {
   res.json(apiSuccess(await adminService.listAdminAppointments()));
 }
@@ -129,6 +135,34 @@ export async function adminCreateLeaveController(req: Request, res: Response): P
 
 export async function adminResolveLeaveController(req: Request, res: Response): Promise<void> {
   res.json(apiSuccess(await leaveService.resolveLeaveConflicts(routeParam(req.params.id), req.user!.id)));
+}
+
+export async function doctorLeaveController(req: Request, res: Response): Promise<void> {
+  const doctor = await requireDoctorRecord(req.user!.id);
+  res.json(apiSuccess(await leaveService.listLeaveForDoctor(doctor.id)));
+}
+
+export async function doctorCreateLeaveController(req: Request, res: Response): Promise<void> {
+  const input = ownLeaveSchema.parse(req.body);
+  const doctor = await requireDoctorRecord(req.user!.id);
+  res.status(201).json(
+    apiSuccess(
+      await leaveService.createDoctorLeave({
+        doctorId: doctor.id,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        reason: input.reason,
+        actorUserId: req.user!.id,
+      }),
+    ),
+  );
+}
+
+export async function doctorResolveLeaveController(req: Request, res: Response): Promise<void> {
+  const doctor = await requireDoctorRecord(req.user!.id);
+  res.json(
+    apiSuccess(await leaveService.resolveLeaveConflicts(routeParam(req.params.id), req.user!.id, doctor.id)),
+  );
 }
 
 export async function adminNotificationsController(_req: Request, res: Response): Promise<void> {

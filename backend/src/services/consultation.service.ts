@@ -3,7 +3,8 @@ import { prisma } from "../db/prisma.js";
 import { Errors } from "../utils/app-error.js";
 import { requireDoctorRecord } from "./appointment-access.service.js";
 import { appointmentInclude, serializeAppointment } from "./appointment-serialize.js";
-import { clinicLocalToUtc, addCalendarDays, toClinicDateInput } from "../utils/clinic-time.js";
+import { nextMedicationFireAt } from "../utils/medication-frequency.js";
+import { env } from "../config/env.js";
 import { assertTransition } from "./appointment-state.js";
 
 async function loadOwnedBooked(user: AuthUser, appointmentId: string) {
@@ -88,16 +89,30 @@ export async function issuePrescription(
       },
     });
 
-    const nextFireAt = nextMorning();
-    await tx.medicationReminder.createMany({
-      data: input.items.map((item) => ({
-        appointmentId: appointment.id,
-        patientId: appointment.patientId!,
-        medicationName: item.name,
-        scheduleLabel: [item.dosage, item.frequency, item.duration].filter(Boolean).join(" · "),
-        nextFireAt,
-      })),
+    const reminderRows = input.items.flatMap((item) => {
+      const nextFireAt = nextMedicationFireAt(item.frequency, new Date(), env.CLINIC_TIMEZONE);
+      if (!nextFireAt) return [];
+      return [
+        {
+          appointmentId: appointment.id,
+          patientId: appointment.patientId!,
+          medicationName: item.name,
+          scheduleLabel: [item.dosage, item.frequency, item.duration].filter(Boolean).join(" · "),
+          nextFireAt,
+          isActive: true,
+        },
+      ];
     });
+
+    await tx.medicationReminder.deleteMany({
+      where: {
+        appointmentId: appointment.id,
+        medicationName: { in: input.items.map((item) => item.name) },
+      },
+    });
+    if (reminderRows.length > 0) {
+      await tx.medicationReminder.createMany({ data: reminderRows });
+    }
   });
 
   return serialized(appointment.id, "doctor");
@@ -165,9 +180,4 @@ export async function completeConsultation(user: AuthUser, appointmentId: string
   });
 
   return serialized(appointmentIdCompleted, "doctor");
-}
-
-function nextMorning(from = new Date()) {
-  const tomorrow = addCalendarDays(toClinicDateInput(from), 1);
-  return clinicLocalToUtc(tomorrow, "08:00");
 }

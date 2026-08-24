@@ -10,8 +10,11 @@ const password = "CareFlow!demo1";
 
 describe("appointment reminders", () => {
   let doctorId = "";
+  let doctorUserId = "";
+  let doctorEmail = "";
   let patientToken = "";
   let patientId = "";
+  let patientEmail = "";
   const slot = nextClinicMonday("11:30");
   const later = nextClinicMonday("16:00");
 
@@ -42,6 +45,8 @@ describe("appointment reminders", () => {
       },
     });
     doctorId = doctor.id;
+    doctorUserId = doctorUser.id;
+    doctorEmail = doctorUser.email;
 
     const patient = await request(app).post("/api/auth/register").send({
       email: `remind.pat.${suffix}@careflow.demo`,
@@ -51,6 +56,7 @@ describe("appointment reminders", () => {
     });
     patientToken = patient.body.data.token;
     patientId = patient.body.data.user.id;
+    patientEmail = patient.body.data.user.email;
   });
 
   afterAll(async () => {
@@ -76,14 +82,17 @@ describe("appointment reminders", () => {
     const reminders = await prisma.notification.findMany({
       where: { appointmentId: confirmed.body.data.id, type: "APPOINTMENT_REMINDER" },
     });
-    expect(reminders).toHaveLength(1);
-    expect(reminders[0]?.status).toBe("QUEUED");
-    expect(reminders[0]?.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
+    expect(reminders).toHaveLength(2);
+    expect(new Set(reminders.map((item) => item.userId))).toEqual(new Set([patientId, doctorUserId]));
+    expect(reminders.every((item) => item.status === "QUEUED")).toBe(true);
+    expect(reminders.every((item) => item.nextAttemptAt.getTime() > Date.now())).toBe(true);
 
     const confirmations = await prisma.notification.findMany({
       where: { appointmentId: confirmed.body.data.id, type: "BOOKING_CONFIRMATION" },
     });
-    expect(confirmations.length).toBeGreaterThanOrEqual(1);
+    expect(confirmations).toHaveLength(2);
+    expect(new Set(confirmations.map((item) => item.toEmail))).toEqual(new Set([patientEmail, doctorEmail]));
+    expect(confirmations.every((item) => item.status === "QUEUED")).toBe(true);
   });
 
   it("updates the reminder when the visit is rescheduled", async () => {
@@ -99,10 +108,12 @@ describe("appointment reminders", () => {
     const reminders = await prisma.notification.findMany({
       where: { appointmentId: appointment.id, type: "APPOINTMENT_REMINDER" },
     });
-    expect(reminders).toHaveLength(1);
-    expect(reminders[0]?.status).toBe("QUEUED");
+    expect(reminders).toHaveLength(2);
+    expect(reminders.every((item) => item.status === "QUEUED")).toBe(true);
     const expected = later.getTime() - 24 * 60 * 60 * 1000;
-    expect(Math.abs((reminders[0]?.nextAttemptAt.getTime() ?? 0) - expected)).toBeLessThan(2000);
+    for (const reminder of reminders) {
+      expect(Math.abs(reminder.nextAttemptAt.getTime() - expected)).toBeLessThan(2000);
+    }
   });
 
   it("invalidates the reminder on cancel and does not send it", async () => {
@@ -114,19 +125,22 @@ describe("appointment reminders", () => {
       .set("Authorization", `Bearer ${patientToken}`);
     expect(cancelled.status).toBe(200);
 
-    const reminder = await prisma.notification.findFirstOrThrow({
+    const reminders = await prisma.notification.findMany({
       where: { appointmentId: appointment.id, type: "APPOINTMENT_REMINDER" },
     });
-    expect(reminder.status).toBe("FAILED");
-    expect(reminder.lastError).toMatch(/no longer booked/i);
+    expect(reminders).toHaveLength(2);
+    expect(reminders.every((item) => item.status === "FAILED")).toBe(true);
+    expect(reminders.every((item) => /no longer booked/i.test(item.lastError ?? ""))).toBe(true);
 
-    await prisma.notification.update({
-      where: { id: reminder.id },
+    await prisma.notification.updateMany({
+      where: { appointmentId: appointment.id, type: "APPOINTMENT_REMINDER" },
       data: { status: "QUEUED", nextAttemptAt: new Date(Date.now() - 1000) },
     });
     await drainNotifications();
-    const skipped = await prisma.notification.findUniqueOrThrow({ where: { id: reminder.id } });
-    expect(skipped.status).toBe("FAILED");
-    expect(skipped.sentAt).toBeNull();
+    const skipped = await prisma.notification.findMany({
+      where: { appointmentId: appointment.id, type: "APPOINTMENT_REMINDER" },
+    });
+    expect(skipped.every((item) => item.status === "FAILED")).toBe(true);
+    expect(skipped.every((item) => item.sentAt === null)).toBe(true);
   });
 });

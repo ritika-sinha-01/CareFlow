@@ -25,9 +25,9 @@ Prisma schema: `backend/prisma/schema.prisma`. PostgreSQL 16.
 
 `jobs` — `GENERATE_PRE_VISIT_AI`, `GENERATE_POST_VISIT_AI`, `CALENDAR_SYNC`, hold expiry helpers, medication reminders. Status `QUEUED | PROCESSING | COMPLETED | FAILED | RETRYING`.
 
-`notifications` — email outbox. Unique `(appointment_id, type)` prevents duplicate appointment reminders.
+`notifications` — email outbox. Unique `(appointment_id, type, user_id)` so the patient and the doctor can each receive the same event type without duplicate rows for one recipient.
 
-`medication_reminders` — from prescriptions.
+`medication_reminders` — from prescriptions. `schedule_label` stores the doctor-supplied frequency text; the worker parses it (once/twice/three times daily, every 4/6/8/12 hours, as needed). As-needed (PRN) doses are not scheduled.
 
 `worker_heartbeats` — single-row liveness.
 

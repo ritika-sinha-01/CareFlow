@@ -209,11 +209,13 @@ export function readEnv(raw: NodeJS.ProcessEnv = process.env): Env {
     process.env.DIRECT_URL = directUrl;
   }
 
+  const vercelDefaultStale = process.env.VERCEL && !raw.WORKER_HEARTBEAT_STALE_MS?.trim();
   return {
     ...parsed.data,
     FRONTEND_URL: frontendUrl,
     CORS_ORIGIN: corsOrigin,
     DIRECT_URL: directUrl,
+    WORKER_HEARTBEAT_STALE_MS: vercelDefaultStale ? 150_000 : parsed.data.WORKER_HEARTBEAT_STALE_MS,
   };
 }
 

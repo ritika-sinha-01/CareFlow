@@ -1,6 +1,10 @@
 # Demo guide
 
-Password for all seeded accounts: **`CareFlow!demo1`**
+For the **assignment evaluator path on the live site**, start with the **Demo** section in [README.md](../README.md). That path uses real APIs, a newly registered patient, the six production demo doctors, and the production admin seed. It does not use `aarav.gupta@careflow.demo` or `admin@careflow.demo`.
+
+The steps below are for a **local** `npm run db:seed` environment, including admin simulation flags that are disabled in production.
+
+Password for all **local** seeded accounts: **`CareFlow!demo1`**
 
 | Role | Email |
 | --- | --- |

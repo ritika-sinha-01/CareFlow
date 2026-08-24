@@ -1,4 +1,6 @@
 import { prisma } from "../db/prisma.js";
+import { env } from "../config/env.js";
+import { nextMedicationFireAt } from "../utils/medication-frequency.js";
 
 export async function processDueMedicationReminders(limit = 20): Promise<number> {
   const due = await prisma.medicationReminder.findMany({
@@ -12,7 +14,6 @@ export async function processDueMedicationReminders(limit = 20): Promise<number>
   });
 
   for (const reminder of due) {
-    const nextFireAt = new Date(reminder.nextFireAt.getTime() + 24 * 60 * 60_000);
     await prisma.notification.create({
       data: {
         userId: reminder.patientId,
@@ -23,12 +24,15 @@ export async function processDueMedicationReminders(limit = 20): Promise<number>
         subject: `Medication reminder: ${reminder.medicationName}`,
         body: `Reminder to take ${reminder.medicationName} (${reminder.scheduleLabel}). This is not medical advice from CareFlow.`,
       },
-    });
+    }).catch(() => undefined);
+
+    const nextFireAt = nextMedicationFireAt(reminder.scheduleLabel, new Date(), env.CLINIC_TIMEZONE);
     await prisma.medicationReminder.update({
       where: { id: reminder.id },
       data: {
         lastSentAt: new Date(),
-        nextFireAt,
+        nextFireAt: nextFireAt ?? reminder.nextFireAt,
+        isActive: nextFireAt !== null,
       },
     });
   }

@@ -65,6 +65,7 @@ export type AppointmentSummary = {
   holdExpiresAt: string | null;
   calendarSyncStatus: string;
   calendarParticipants?: CalendarParticipant[];
+  notifications?: Array<{ id: string; type: string; status: string }>;
   symptoms?: string | null;
   patientSummary?: string | null;
   followUpSteps?: string[];
@@ -82,10 +83,10 @@ export type AppointmentSummary = {
   } | null;
   ai?: {
     status: string;
-    urgency: "LOW" | "MEDIUM" | "HIGH" | null;
-    chiefComplaint: string | null;
-    keySymptoms: string[];
-    suggestedQuestions: string[];
+    urgency?: "LOW" | "MEDIUM" | "HIGH" | null;
+    chiefComplaint?: string | null;
+    keySymptoms?: string[];
+    suggestedQuestions?: string[];
     error: string | null;
     disclaimer: string;
   };

@@ -5,7 +5,7 @@ import { EmptyState, PageHeader, QueryError, SkeletonBlock } from "@/components/
 import { buttonVariants } from "@/components/ui/button";
 import { useAuth } from "@/auth/AuthContext";
 import { greetingForNow } from "@/lib/dates";
-import type { AppointmentSummary, PublicUser } from "@/lib/types";
+import type { AppointmentSummary, DoctorCard, PublicUser } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useApi } from "@/lib/use-api";
 
@@ -20,6 +20,7 @@ type Dashboard = {
 export function PatientDashboardPage() {
   const { user } = useAuth();
   const { data, error, loading } = useApi<Dashboard>("/api/patient/dashboard");
+  const { data: doctors } = useApi<DoctorCard[]>("/api/patient/doctors");
 
   if (loading) return <SkeletonBlock className="h-64" />;
   if (error) return <QueryError message={error} />;
@@ -31,8 +32,8 @@ export function PatientDashboardPage() {
         title={`${greetingForNow()}, ${user.firstName}`}
         description="Your next visit, medications, and recent care — in one place."
         action={
-          <Link to="/patient/book" className={cn(buttonVariants())}>
-            Book appointment
+          <Link to="/patient/doctors" className={cn(buttonVariants())}>
+            Find a doctor
           </Link>
         }
       />
@@ -49,12 +50,33 @@ export function PatientDashboardPage() {
         <div className="mb-6">
           <EmptyState
             title="No upcoming appointments"
-            description="Your next appointment will appear here."
+            description="Choose a clinician below, or open Find care to search by specialization."
             actionLabel="Find a doctor"
             actionTo="/patient/doctors"
           />
         </div>
       )}
+
+      {doctors && doctors.length > 0 ? (
+        <section className="mb-8">
+          <h2 className="mb-3 text-sm font-medium text-muted-foreground">Clinicians</h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {doctors.map((doctor) => (
+              <Link
+                key={doctor.id}
+                to={`/patient/doctors/${doctor.id}`}
+                className="rounded-xl border border-border/80 bg-card px-4 py-3 shadow-soft hover:border-primary/20"
+              >
+                <p className="font-medium">{doctor.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {doctor.specialization}
+                  {doctor.isDemo ? " · Demo profile" : ""}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section>

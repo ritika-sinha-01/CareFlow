@@ -6,6 +6,7 @@ import { appointmentInclude, serializeAppointment } from "./appointment-serializ
 import { shouldSimulate } from "./demo-simulation.service.js";
 import { recordSystemEvent } from "./system-event.service.js";
 import { cancelAppointmentReminders } from "./appointment-reminder.service.js";
+import { queueUserNotification } from "./notification.service.js";
 import { ensureCalendarParticipants } from "./calendar.service.js";
 
 function leaveWindow(startDate: Date, endDate: Date) {
@@ -72,7 +73,7 @@ export async function createDoctorLeave(input: {
   return serializeLeave(leave.id, doctor.id, displayName(doctor.user), startDate, endDate, input.reason ?? null, affected);
 }
 
-export async function resolveLeaveConflicts(leaveId: string, actorUserId: string) {
+export async function resolveLeaveConflicts(leaveId: string, actorUserId: string, ownedDoctorId?: string) {
   if (await shouldSimulate("LEAVE_CONFLICT")) {
     throw Errors.conflict("Leave conflict resolution is simulated as failing. Appointments were not changed.");
   }
@@ -82,6 +83,9 @@ export async function resolveLeaveConflicts(leaveId: string, actorUserId: string
     include: { doctor: { include: { user: true } } },
   });
   if (!leave) throw Errors.notFound("This leave record is not available.");
+  if (ownedDoctorId && leave.doctorId !== ownedDoctorId) {
+    throw Errors.notFound("This leave record is not available.");
+  }
 
   const affected = await affectedAppointments(leave.doctorId, leave.startDate, leave.endDate);
   const now = new Date();
@@ -117,18 +121,23 @@ export async function resolveLeaveConflicts(leaveId: string, actorUserId: string
     await cancelAppointmentReminders(appointment.id).catch(() => undefined);
 
     if (appointment.patient) {
-      await prisma.notification.create({
-        data: {
-          userId: appointment.patient.id,
-          appointmentId: appointment.id,
-          type: "LEAVE_AFFECTED",
-          status: "QUEUED",
-          toEmail: appointment.patient.email,
-          subject: "Your CareFlow appointment needs to be rescheduled",
-          body: "Your clinician is unavailable on this date. The visit was released so you can book another time.",
-        },
+      await queueUserNotification({
+        userId: appointment.patient.id,
+        email: appointment.patient.email,
+        appointmentId: appointment.id,
+        type: "LEAVE_AFFECTED",
+        subject: "Your CareFlow appointment needs to be rescheduled",
+        body: "Your clinician is unavailable on this date. The visit was released so you can book another time.",
       }).catch(() => undefined);
     }
+    await queueUserNotification({
+      userId: appointment.doctor.user.id,
+      email: appointment.doctor.user.email,
+      appointmentId: appointment.id,
+      type: "LEAVE_AFFECTED",
+      subject: "A CareFlow appointment was released due to leave",
+      body: "A visit was released because this clinician is on leave.",
+    }).catch(() => undefined);
 
     await ensureCalendarParticipants(appointment.id).catch(() => undefined);
     await prisma.job.create({
@@ -150,6 +159,7 @@ export async function resolveLeaveConflicts(leaveId: string, actorUserId: string
       leave.endDate,
       leave.reason,
       remaining,
+      ownedDoctorId ? "doctor" : "admin",
     ),
   };
 }
@@ -162,6 +172,7 @@ function serializeLeave(
   endDate: Date,
   reason: string | null,
   affected: Awaited<ReturnType<typeof affectedAppointments>>,
+  audience: "doctor" | "admin" = "admin",
 ) {
   return {
     id,
@@ -171,12 +182,13 @@ function serializeLeave(
     endDate: endDate.toISOString(),
     reason,
     affectedAppointments: affected.length,
-    appointments: affected.map((item) => serializeAppointment(item, "admin")),
+    appointments: affected.map((item) => serializeAppointment(item, audience)),
   };
 }
 
-export async function listLeaveWithConflicts() {
+export async function listLeaveWithConflicts(doctorId?: string) {
   const leaves = await prisma.doctorLeave.findMany({
+    where: doctorId ? { doctorId } : undefined,
     include: { doctor: { include: { user: true } } },
     orderBy: { startDate: "desc" },
   });
@@ -192,7 +204,12 @@ export async function listLeaveWithConflicts() {
         leave.endDate,
         leave.reason,
         affected,
+        doctorId ? "doctor" : "admin",
       );
     }),
   );
+}
+
+export async function listLeaveForDoctor(doctorId: string) {
+  return listLeaveWithConflicts(doctorId);
 }

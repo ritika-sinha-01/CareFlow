@@ -30,7 +30,7 @@ export function PatientDoctorsPage() {
     <div>
       <PageHeader
         title="Find care"
-        description="Search by name or specialization. Demo clinician profiles are labeled."
+        description="Live clinic directory. Choose a clinician, then a weekday, to see real available slots."
       />
       <div className="mb-6 grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -61,15 +61,19 @@ export function PatientDoctorsPage() {
       </div>
       {loading ? <SkeletonBlock className="h-40" /> : null}
       {error ? <QueryError message={error} /> : null}
-      {!loading && filtered.length === 0 ? (
+      {!loading && !error && (data?.length ?? 0) === 0 ? (
+        <EmptyState title="No clinicians listed" description="Ask an administrator to add doctor profiles." />
+      ) : null}
+      {!loading && !error && (data?.length ?? 0) > 0 && filtered.length === 0 ? (
         <EmptyState title="No doctors match" description="Try another specialization or clear your search." />
-      ) : (
+      ) : null}
+      {filtered.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2">
           {filtered.map((doctor) => (
             <DoctorResult key={doctor.id} doctor={doctor} />
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

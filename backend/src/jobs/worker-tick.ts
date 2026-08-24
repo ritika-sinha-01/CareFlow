@@ -6,8 +6,13 @@ import { processDueNotifications } from "../services/notification.service.js";
 
 export async function runWorkerTick(): Promise<void> {
   await writeWorkerHeartbeat();
-  await expireStaleHolds();
-  await processDueJobs();
-  await processDueMedicationReminders();
-  await processDueNotifications();
+
+  const steps = [expireStaleHolds, processDueJobs, processDueMedicationReminders, processDueNotifications];
+  for (const step of steps) {
+    try {
+      await step();
+    } catch {
+      // One subsystem failure must not skip remaining work or the heartbeat.
+    }
+  }
 }

@@ -50,7 +50,9 @@ export function LoginPage() {
         <CardHeader>
           <CardTitle>Sign in</CardTitle>
           <CardDescription>
-            {DEMO_UI_ENABLED ? "Use your CareFlow account. Demo passwords are listed below." : "Use your CareFlow account."}
+            {DEMO_UI_ENABLED
+              ? "Patients can register. Demo clinician and admin passwords are listed below."
+              : "Patients create an account. Clinicians and administrators sign in with clinic-issued credentials."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -124,7 +126,9 @@ export function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (user) return <Navigate to={homeForRole(user.role)} replace />;
+  if (user) {
+    return <Navigate to={user.role === "PATIENT" ? "/patient/doctors" : homeForRole(user.role)} replace />;
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -139,7 +143,7 @@ export function RegisterPage() {
         password: String(form.get("password") ?? ""),
         phone: String(form.get("phone") ?? "") || undefined,
       });
-      navigate(homeForRole(session.user.role), { replace: true });
+      navigate(session.user.role === "PATIENT" ? "/patient/doctors" : homeForRole(session.user.role), { replace: true });
     } catch (caught) {
       setError(authErrorMessage(caught, "Unable to create your account."));
     } finally {

@@ -5,7 +5,7 @@ import { getSystemHealth } from "./health.service.js";
 import { displayName, toPublicUser } from "../utils/serializers.js";
 import { appointmentInclude, serializeAppointment } from "./appointment-serialize.js";
 import type { z } from "zod";
-import type { createDoctorSchema } from "../validators/auth.validators.js";
+import type { createDoctorSchema, updateDoctorSchema } from "../validators/auth.validators.js";
 import { Errors } from "../utils/app-error.js";
 
 function leaveEndExclusive(endDate: Date) {
@@ -162,6 +162,51 @@ export async function createDoctor(input: z.infer<typeof createDoctorSchema>) {
     user: toPublicUser(user),
     doctorId: user.doctor?.id,
   };
+}
+
+export async function updateDoctor(id: string, input: z.infer<typeof updateDoctorSchema>) {
+  const doctor = await prisma.doctor.findUnique({
+    where: { id },
+    include: { user: true, workingHours: true },
+  });
+  if (!doctor) throw Errors.notFound("This doctor profile is not available.");
+
+  const weekdaySet = new Set((input.workingHours ?? []).map((row) => row.weekday));
+  if (input.workingHours && weekdaySet.size !== input.workingHours.length) {
+    throw Errors.validation("Each weekday can appear only once.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: doctor.userId },
+      data: {
+        firstName: input.firstName ?? doctor.user.firstName,
+        lastName: input.lastName ?? doctor.user.lastName,
+      },
+    });
+    await tx.doctor.update({
+      where: { id: doctor.id },
+      data: {
+        specialization: input.specialization ?? doctor.specialization,
+        slotDurationMin: input.slotDurationMin ?? doctor.slotDurationMin,
+        yearsExperience: input.yearsExperience === undefined ? doctor.yearsExperience : input.yearsExperience,
+        bio: input.bio === undefined ? doctor.bio : input.bio,
+      },
+    });
+    if (input.workingHours) {
+      await tx.doctorWorkingHour.deleteMany({ where: { doctorId: doctor.id } });
+      await tx.doctorWorkingHour.createMany({
+        data: input.workingHours.map((row) => ({
+          doctorId: doctor.id,
+          weekday: row.weekday,
+          startTime: row.startTime,
+          endTime: row.endTime,
+        })),
+      });
+    }
+  });
+
+  return getAdminDoctor(id);
 }
 
 export async function listAdminAppointments() {

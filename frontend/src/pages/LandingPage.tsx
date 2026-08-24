@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { CalendarDays, Shield, Stethoscope, UserRound } from "lucide-react";
 import { BrandMark } from "@/components/BrandMark";
+import { HealthComponentRow } from "@/components/SideEffectStatus";
 import { StatusBadge } from "@/components/StatusBadge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { apiGet } from "@/lib/api";
+import type { DoctorCard } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type HealthStatus = "OPERATIONAL" | "DEGRADED" | "UNAVAILABLE";
@@ -25,31 +27,37 @@ type HealthPayload = {
 const roles = [
   {
     title: "Patient",
-    description: "Find a clinician, hold a slot, and follow care from booking through follow-up.",
+    description: "Register, find a clinician, hold a weekday slot, and follow the visit through confirmation.",
     icon: UserRound,
+    href: "/register",
+    action: "Create patient account",
   },
   {
     title: "Doctor",
-    description: "Start the day with a briefing, write notes, and close the visit with a patient summary.",
+    description: "Sign in with a demo clinician account, open the booked visit, write notes, and complete the visit.",
     icon: Stethoscope,
+    href: "/login",
+    action: "Sign in as clinician",
   },
   {
     title: "Admin",
-    description: "Manage schedules, leave conflicts, and notification reliability from one place.",
+    description: "Sign in with the production admin you seeded, then create or edit doctors and manage leave.",
     icon: Shield,
+    href: "/login",
+    action: "Sign in as admin",
   },
 ];
 
-const mockSlots = [
-  { time: "09:00", state: "Booked" },
-  { time: "09:30", state: "Available" },
-  { time: "10:00", state: "Held" },
-  { time: "10:30", state: "Available" },
-  { time: "11:00", state: "Available" },
-  { time: "11:30", state: "Booked" },
+const evaluatorSteps = [
+  "Create a patient account (no seeded patient on production).",
+  "Open Find care and choose one of the six live demo clinicians.",
+  "Pick a weekday, then an available slot from the real occupancy grid.",
+  "Enter symptoms and confirm. The appointment is stored even if AI, email, or calendar are unavailable.",
+  "Sign out, sign in as that clinician, add notes and a prescription, then generate a patient summary.",
+  "Sign in as admin to edit doctors and record leave.",
 ];
 
-function healthTone(status: HealthStatus) {
+function overallTone(status: HealthStatus) {
   if (status === "OPERATIONAL") return "success" as const;
   if (status === "DEGRADED") return "warning" as const;
   return "danger" as const;
@@ -58,6 +66,7 @@ function healthTone(status: HealthStatus) {
 export function LandingPage() {
   const [health, setHealth] = useState<HealthPayload | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [doctors, setDoctors] = useState<DoctorCard[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +76,13 @@ export function LandingPage() {
       })
       .catch(() => {
         if (!cancelled) setHealthError("The API is not reachable yet.");
+      });
+    apiGet<DoctorCard[]>("/api/doctors")
+      .then((data) => {
+        if (!cancelled) setDoctors(data);
+      })
+      .catch(() => {
+        if (!cancelled) setDoctors([]);
       });
     return () => {
       cancelled = true;
@@ -79,7 +95,7 @@ export function LandingPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
           <BrandMark />
           <div className="flex items-center gap-3">
-            <StatusBadge label="Demo environment" tone="info" />
+            <StatusBadge label="Live clinic data" tone="info" />
             <Link to="/login" className={cn(buttonVariants({ size: "sm" }))}>
               Sign in
             </Link>
@@ -88,7 +104,7 @@ export function LandingPage() {
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-16 md:py-24">
-        <div className="grid items-center gap-12 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid items-start gap-12 lg:grid-cols-[1.1fr_0.9fr]">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.16em] text-muted-foreground">
               Healthcare appointments, without the noise
@@ -98,44 +114,43 @@ export function LandingPage() {
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
               CareFlow holds real slots, prevents double-booking, and keeps AI, email, and calendar as side effects.
-              If an integration fails, the appointment still stands.
+              If an optional integration is not configured, the UI says so — and the appointment still stands.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link to="/login" className={cn(buttonVariants({ size: "lg" }))}>
-                Sign in
-              </Link>
-              <Link to="/register" className={cn(buttonVariants({ variant: "outline", size: "lg" }))}>
+              <Link to="/register" className={cn(buttonVariants({ size: "lg" }))}>
                 Create patient account
+              </Link>
+              <a href="#clinicians" className={cn(buttonVariants({ variant: "outline", size: "lg" }))}>
+                Find doctors
+              </a>
+              <Link to="/login" className={cn(buttonVariants({ variant: "ghost", size: "lg" }))}>
+                Sign in
               </Link>
             </div>
           </div>
 
-          <Card className="relative overflow-hidden" aria-hidden="true">
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-secondary/70 to-transparent" />
+          <Card>
             <CardHeader>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Tuesday · Cardiology
+                Assignment evaluator
               </p>
-              <CardTitle>Dr. Ananya Sharma</CardTitle>
-              <CardDescription>30-minute visits · occupancy is the source of truth</CardDescription>
+              <CardTitle>10-minute demo path</CardTitle>
+              <CardDescription>
+                Every step uses the live API and database. Credentials for clinicians and admin are in the README Demo
+                section — they are not filled in on this page.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-2">
-                {mockSlots.map((slot) => (
-                  <div
-                    key={slot.time}
-                    className={cn(
-                      "rounded-xl border px-3 py-3",
-                      slot.state === "Available" && "border-success/30 bg-success/10",
-                      slot.state === "Held" && "border-warning/30 bg-warning/5",
-                      slot.state === "Booked" && "border-border bg-muted/70",
-                    )}
-                  >
-                    <p className="text-sm font-semibold">{slot.time}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{slot.state}</p>
-                  </div>
+              <ol className="space-y-3">
+                {evaluatorSteps.map((step, index) => (
+                  <li key={step} className="flex gap-3 text-sm leading-relaxed">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">
+                      {index + 1}
+                    </span>
+                    <span>{step}</span>
+                  </li>
                 ))}
-              </div>
+              </ol>
             </CardContent>
           </Card>
         </div>
@@ -149,12 +164,52 @@ export function LandingPage() {
                 </span>
                 <CardTitle className="pt-2">{role.title}</CardTitle>
                 <CardDescription>{role.description}</CardDescription>
-                <Link to="/login" className="pt-2 text-sm font-medium text-primary underline-offset-4 hover:underline">
-                  Continue
+                <Link to={role.href} className="pt-2 text-sm font-medium text-primary underline-offset-4 hover:underline">
+                  {role.action}
                 </Link>
               </CardHeader>
             </Card>
           ))}
+        </section>
+
+        <section className="mt-20" aria-labelledby="clinicians-heading" id="clinicians">
+          <h2 id="clinicians-heading" className="text-2xl font-semibold tracking-tight">
+            Find doctors
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            These profiles are loaded from <code className="text-xs">GET /api/doctors</code>. Create a patient account
+            to hold a real weekday slot.
+          </p>
+          {doctors === null ? (
+            <div className="mt-6 grid gap-3 md:grid-cols-2" aria-busy="true">
+              <div className="h-20 animate-pulse rounded-xl bg-muted" />
+              <div className="h-20 animate-pulse rounded-xl bg-muted" />
+            </div>
+          ) : doctors.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">No clinicians are listed yet.</p>
+          ) : (
+            <div className="mt-6 grid gap-3 md:grid-cols-2">
+              {doctors.map((doctor) => (
+                <Card key={doctor.id}>
+                  <CardHeader>
+                    <CardTitle className="text-base">{doctor.name}</CardTitle>
+                    <CardDescription>
+                      {doctor.specialization}
+                      {doctor.isDemo ? " · Demo profile" : ""}
+                      {doctor.workingHours[0]
+                        ? ` · Weekdays ${doctor.workingHours[0].startTime}–${doctor.workingHours[0].endTime}`
+                        : ""}
+                    </CardDescription>
+                  </CardHeader>
+                </Card>
+              ))}
+            </div>
+          )}
+          <div className="mt-6">
+            <Link to="/register" className={cn(buttonVariants())}>
+              Create patient account to book
+            </Link>
+          </div>
         </section>
 
         <section className="mt-20" aria-labelledby="health-heading">
@@ -166,7 +221,8 @@ export function LandingPage() {
             System health
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            These checks are live. Calendar and email can be unavailable without invalidating appointments.
+            These checks are live. OpenAI, email, and Google Calendar can report UNAVAILABLE without invalidating
+            appointments. Booking only needs the database and appointment engine.
           </p>
 
           {healthError ? (
@@ -202,20 +258,17 @@ export function LandingPage() {
                     <CardDescription>Clinic timezone {health.clinicTimezone}</CardDescription>
                   ) : null}
                 </div>
-                <StatusBadge label={health.status} tone={healthTone(health.status)} />
+                <StatusBadge label={health.status} tone={overallTone(health.status)} />
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2">
                 {health.components.map((component) => (
-                  <div
+                  <HealthComponentRow
                     key={component.name}
-                    className="flex items-start justify-between gap-3 rounded-xl border border-border/80 bg-muted/30 px-3 py-3"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{component.name.replaceAll("_", " ")}</p>
-                      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{component.detail}</p>
-                    </div>
-                    <StatusBadge label={component.status} tone={healthTone(component.status)} />
-                  </div>
+                    name={component.name}
+                    status={component.status}
+                    detail={component.detail}
+                    optional={component.optional}
+                  />
                 ))}
               </CardContent>
             </Card>

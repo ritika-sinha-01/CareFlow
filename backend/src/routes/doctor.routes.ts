@@ -15,6 +15,9 @@ import {
   doctorIssuePrescriptionController,
   doctorCompleteVisitController,
   cancelAppointmentController,
+  doctorLeaveController,
+  doctorCreateLeaveController,
+  doctorResolveLeaveController,
 } from "../controllers/portal.controller.js";
 import { googleCalendarCallbackController } from "../controllers/integrations.controller.js";
 
@@ -32,6 +35,9 @@ doctorRouter.post("/appointments/:id/complete", asyncHandler(doctorCompleteVisit
 doctorRouter.post("/appointments/:id/cancel", asyncHandler(cancelAppointmentController));
 doctorRouter.get("/patients", asyncHandler(doctorPatientsController));
 doctorRouter.get("/profile", asyncHandler(doctorProfileController));
+doctorRouter.get("/leave", asyncHandler(doctorLeaveController));
+doctorRouter.post("/leave", asyncHandler(doctorCreateLeaveController));
+doctorRouter.post("/leave/:id/resolve", asyncHandler(doctorResolveLeaveController));
 doctorRouter.post("/calendar/connect", asyncHandler(doctorCalendarConnectController));
 doctorRouter.post("/calendar/disconnect", asyncHandler(doctorCalendarDisconnectController));
 doctorRouter.get("/calendar/status", asyncHandler(doctorCalendarStatusController));

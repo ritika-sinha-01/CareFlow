@@ -15,6 +15,7 @@ export default defineConfig({
       ENABLE_DEMO_SIMULATION: "true",
       EMAIL_PROVIDER: "test",
       CLINIC_TIMEZONE: "Asia/Kolkata",
+      CRON_SECRET: "test-cron-secret-test-cron-secret",
     },
   },
 });

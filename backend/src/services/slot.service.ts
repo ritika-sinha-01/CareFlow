@@ -158,9 +158,20 @@ export async function assertSlotBookable(doctorId: string, startAt: Date): Promi
 }
 
 export async function nextAvailableSlot(doctorId: string): Promise<string | null> {
+  const doctor = await prisma.doctor.findUnique({
+    where: { id: doctorId },
+    include: { workingHours: true, leaves: true },
+  });
+  if (!doctor) return null;
+
+  const openWeekdays = new Set(doctor.workingHours.map((item) => item.weekday));
+  if (openWeekdays.size === 0) return null;
+
   const todayStr = toClinicDateInput(new Date());
   for (let offset = 0; offset < 14; offset += 1) {
     const dateStr = addCalendarDays(todayStr, offset);
+    if (!openWeekdays.has(weekdayOf(dateStr))) continue;
+    if (isOnLeave(doctor.leaves, dateStr)) continue;
     const listed = await listSlotsForDoctor(doctorId, dateStr);
     const open = listed.slots.find((slot) => slot.state === "AVAILABLE");
     if (open) return open.startAt;

@@ -263,7 +263,7 @@ export function PatientBookPage() {
           <CardContent className="space-y-6">
             {step >= 1 ? (
               <div className="space-y-2">
-                <Label htmlFor="visit-date">Preferred date</Label>
+                <Label htmlFor="visit-date">Preferred weekday</Label>
                 <input
                   id="visit-date"
                   type="date"
@@ -273,6 +273,10 @@ export function PatientBookPage() {
                   value={date}
                   onChange={(event) => void onDateChange(event.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Seeded demo clinicians typically see patients Monday–Friday. Weekends are closed and return no
+                  available slots.
+                </p>
               </div>
             ) : null}
 

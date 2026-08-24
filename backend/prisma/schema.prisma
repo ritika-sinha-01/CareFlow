@@ -363,7 +363,7 @@ model Notification {
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
 
-  @@unique([appointmentId, type], map: "notifications_appointment_id_type_key")
+  @@unique([appointmentId, type, userId], map: "notifications_appointment_id_type_user_id_key")
   @@index([status, nextAttemptAt])
   @@index([userId, createdAt])
   @@map("notifications")

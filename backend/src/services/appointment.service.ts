@@ -13,9 +13,11 @@ import { assertTransition } from "./appointment-state.js";
 import { requireDoctorRecord } from "./appointment-access.service.js";
 import {
   cancelAppointmentReminders,
-  queueAppointmentReminder,
+  queueAppointmentReminders,
   rescheduleAppointmentReminder,
 } from "./appointment-reminder.service.js";
+import { queueUserNotification } from "./notification.service.js";
+import { getAiConfigurationState } from "./ai.service.js";
 import { ensureCalendarParticipants } from "./calendar.service.js";
 
 function isUniqueOccupancyError(error: unknown): boolean {
@@ -53,39 +55,60 @@ function audienceFor(user: AuthUser): "patient" | "doctor" | "admin" {
 
 async function queueBookingSideEffects(input: {
   appointmentId: string;
-  userId: string;
-  email: string;
-  startAt: Date;
   calendarAction: "create" | "update" | "delete";
   notificationType: "BOOKING_CONFIRMATION" | "CANCELLATION" | "RESCHEDULE";
   subject: string;
   body: string;
 }) {
   try {
-    await prisma.notification.create({
-      data: {
-        userId: input.userId,
+    const appointment = await prisma.appointment.findUnique({
+      where: { id: input.appointmentId },
+      include: { doctor: { include: { user: true } }, patient: true },
+    });
+    if (!appointment) return;
+
+    const recipients = new Map<string, { id: string; email: string }>();
+    if (appointment.patient) {
+      recipients.set(appointment.patient.id, { id: appointment.patient.id, email: appointment.patient.email });
+    }
+    recipients.set(appointment.doctor.user.id, {
+      id: appointment.doctor.user.id,
+      email: appointment.doctor.user.email,
+    });
+
+    for (const recipient of recipients.values()) {
+      await queueUserNotification({
+        userId: recipient.id,
+        email: recipient.email,
         appointmentId: input.appointmentId,
         type: input.notificationType,
-        status: "QUEUED",
-        toEmail: input.email,
         subject: input.subject,
         body: input.body,
-      },
-    });
+      });
+    }
+
     if (input.notificationType === "BOOKING_CONFIRMATION") {
-      await prisma.job.create({
-        data: {
-          type: "GENERATE_PRE_VISIT_AI",
-          payload: { appointmentId: input.appointmentId },
-        },
-      });
-      await queueAppointmentReminder({
-        appointmentId: input.appointmentId,
-        userId: input.userId,
-        email: input.email,
-        startAt: input.startAt,
-      });
+      if (getAiConfigurationState().configured) {
+        await prisma.appointment.update({
+          where: { id: input.appointmentId },
+          data: { aiPreVisitStatus: "PENDING" },
+        });
+        await prisma.job.create({
+          data: {
+            type: "GENERATE_PRE_VISIT_AI",
+            payload: { appointmentId: input.appointmentId },
+          },
+        });
+      } else {
+        await prisma.appointment.update({
+          where: { id: input.appointmentId },
+          data: {
+            aiPreVisitStatus: "FAILED",
+            aiPreVisitError: "Visit briefing is unavailable. Original symptoms were preserved.",
+          },
+        });
+      }
+      await queueAppointmentReminders(input.appointmentId, appointment.startAt);
     }
     await ensureCalendarParticipants(input.appointmentId);
     await prisma.job.create({
@@ -268,13 +291,10 @@ export async function confirmHold(user: AuthUser, appointmentId: string, symptom
 
   await queueBookingSideEffects({
     appointmentId: confirmed.id,
-    userId: user.id,
-    email: user.email,
-    startAt: confirmed.startAt,
     calendarAction: "create",
     notificationType: "BOOKING_CONFIRMATION",
     subject: "Your CareFlow appointment is confirmed",
-    body: "Your appointment is confirmed. A visit briefing will appear when available.",
+    body: "A CareFlow appointment is confirmed. A visit briefing will appear when available.",
   });
 
   return loadSerialized(confirmed.id, "patient");
@@ -374,19 +394,13 @@ export async function cancelAppointment(user: AuthUser, appointmentId: string) {
 
   if (appointment.status === "BOOKED" && appointment.patientId) {
     await cancelAppointmentReminders(appointment.id);
-    const patient = await prisma.user.findUnique({ where: { id: appointment.patientId } });
-    if (patient) {
-      await queueBookingSideEffects({
-        appointmentId: appointment.id,
-        userId: patient.id,
-        email: patient.email,
-        startAt: appointment.startAt,
-        calendarAction: "delete",
-        notificationType: "CANCELLATION",
-        subject: "Your CareFlow appointment was cancelled",
-        body: "Your appointment was cancelled. The time is available again.",
-      });
-    }
+    await queueBookingSideEffects({
+      appointmentId: appointment.id,
+      calendarAction: "delete",
+      notificationType: "CANCELLATION",
+      subject: "A CareFlow appointment was cancelled",
+      body: "A CareFlow appointment was cancelled. The time is available again.",
+    });
   }
 
   return loadSerialized(appointment.id, audienceFor(user));
@@ -452,13 +466,10 @@ export async function rescheduleAppointment(user: AuthUser, appointmentId: strin
 
     await queueBookingSideEffects({
       appointmentId: result.id,
-      userId: user.id,
-      email: user.email,
-      startAt,
       calendarAction: "update",
       notificationType: "RESCHEDULE",
-      subject: "Your CareFlow appointment was rescheduled",
-      body: "Your appointment time was updated.",
+      subject: "A CareFlow appointment was rescheduled",
+      body: "A CareFlow appointment time was updated.",
     });
     await rescheduleAppointmentReminder({
       appointmentId: result.id,

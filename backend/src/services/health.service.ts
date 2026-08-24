@@ -82,6 +82,7 @@ async function checkAiService(): Promise<HealthComponent> {
       name: "AI_SERVICE",
       status: "DEGRADED",
       detail: "Demo simulation is forcing AI failures — booking still works",
+      optional: true,
     };
   }
   const state = getAiConfigurationState();
@@ -90,6 +91,7 @@ async function checkAiService(): Promise<HealthComponent> {
       name: "AI_SERVICE",
       status: "UNAVAILABLE",
       detail: "No API key configured — booking still works",
+      optional: true,
     };
   }
   if (state.provider === "mock") {
@@ -97,12 +99,14 @@ async function checkAiService(): Promise<HealthComponent> {
       name: "AI_SERVICE",
       status: "OPERATIONAL",
       detail: "Mock adapter — live OpenAI is not used",
+      optional: true,
     };
   }
   return {
     name: "AI_SERVICE",
     status: "OPERATIONAL",
     detail: `API key configured for ${env.OPENAI_MODEL} — live calls are not probed`,
+    optional: true,
   };
 }
 
@@ -112,6 +116,7 @@ async function checkEmailService(): Promise<HealthComponent> {
       name: "EMAIL_SERVICE",
       status: "DEGRADED",
       detail: "Demo simulation is forcing email failures — booking still works",
+      optional: true,
     };
   }
   const state = getEmailConfigurationState();
@@ -120,6 +125,7 @@ async function checkEmailService(): Promise<HealthComponent> {
       name: "EMAIL_SERVICE",
       status: "UNAVAILABLE",
       detail: "No Resend or SMTP credentials — booking still works",
+      optional: true,
     };
   }
   if (state.provider === "test") {
@@ -127,22 +133,27 @@ async function checkEmailService(): Promise<HealthComponent> {
       name: "EMAIL_SERVICE",
       status: "OPERATIONAL",
       detail: "Test adapter — messages are not delivered to a live mailbox",
+      optional: true,
     };
   }
   return {
     name: "EMAIL_SERVICE",
     status: "OPERATIONAL",
     detail: `Credentials present for ${state.provider} — live send is not probed`,
+    optional: true,
   };
 }
 
 async function checkWorker(): Promise<HealthComponent> {
   const heartbeat = await getWorkerHeartbeat();
+  const cronConfigured = Boolean(env.CRON_SECRET);
   if (!heartbeat) {
     return {
       name: "BACKGROUND_WORKER",
       status: "UNAVAILABLE",
-      detail: "No worker heartbeat yet",
+      detail: cronConfigured
+        ? "Worker is configured (CRON_SECRET) but has not recorded a heartbeat yet"
+        : "No worker heartbeat yet",
     };
   }
 
@@ -151,14 +162,16 @@ async function checkWorker(): Promise<HealthComponent> {
     return {
       name: "BACKGROUND_WORKER",
       status: "UNAVAILABLE",
-      detail: "Worker heartbeat is stale",
+      detail: cronConfigured
+        ? `Worker heartbeat is stale (older than ${env.WORKER_HEARTBEAT_STALE_MS}ms). Cron may be delayed or the plan may only run daily.`
+        : "Worker heartbeat is stale",
     };
   }
 
   return {
     name: "BACKGROUND_WORKER",
     status: "OPERATIONAL",
-    detail: "Heartbeat received",
+    detail: cronConfigured ? "Heartbeat received from scheduled tick" : "Heartbeat received",
   };
 }
 

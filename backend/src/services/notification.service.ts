@@ -1,9 +1,52 @@
-import type { NotificationStatus } from "@prisma/client";
+import type { NotificationStatus, NotificationType } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
 import { sendEmail, getEmailConfigurationState } from "./email.service.js";
 import { recordSystemEvent } from "./system-event.service.js";
 
 const RETRY_BACKOFF_MS = [30_000, 60_000, 120_000, 300_000, 600_000];
+
+export async function queueUserNotification(input: {
+  userId: string;
+  email: string;
+  appointmentId: string;
+  type: NotificationType;
+  subject: string;
+  body: string;
+  nextAttemptAt?: Date;
+}): Promise<void> {
+  await prisma.notification.upsert({
+    where: {
+      appointmentId_type_userId: {
+        appointmentId: input.appointmentId,
+        type: input.type,
+        userId: input.userId,
+      },
+    },
+    create: {
+      userId: input.userId,
+      appointmentId: input.appointmentId,
+      type: input.type,
+      status: "QUEUED",
+      toEmail: input.email,
+      subject: input.subject,
+      body: input.body,
+      nextAttemptAt: input.nextAttemptAt ?? new Date(),
+      retryCount: 0,
+      lastError: null,
+      sentAt: null,
+    },
+    update: {
+      status: "QUEUED",
+      toEmail: input.email,
+      subject: input.subject,
+      body: input.body,
+      nextAttemptAt: input.nextAttemptAt ?? new Date(),
+      retryCount: 0,
+      lastError: null,
+      sentAt: null,
+    },
+  });
+}
 
 export async function processDueNotifications(limit = 10): Promise<number> {
   const due = await prisma.notification.findMany({

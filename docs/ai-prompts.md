@@ -15,12 +15,12 @@ Rules:
 - Be conservative. Use HIGH urgency only for possible emergency warning signs
   (severe chest pain, difficulty breathing, sudden neurological symptoms,
   uncontrolled bleeding, or similar).
-- Return JSON only with keys: urgency (LOW|MEDIUM|HIGH), chiefComplaint (one sentence),
-  keySymptoms (string array), suggestedQuestions (string array of questions the clinician might ask).
+- Return JSON only with keys: urgencyLevel (Low|Medium|High), chiefComplaint (one sentence), suggestedQuestions (exactly 3 strings the clinician might ask).
+- suggestedQuestions MUST contain exactly 3 items.
 - Do not invent facts that are not in the symptoms text.
 ```
 
-Invalid JSON or schema failure → retryable job error. Missing API key → permanent `FAILED` on the appointment, symptoms unchanged.
+Invalid JSON or schema failure → retryable job error. Fewer or more than 3 questions are normalized to exactly 3 before storage. Missing API key → permanent `FAILED` on the appointment (symptoms unchanged). Malformed AI output never rolls back a `BOOKED` visit.
 
 ## Post-visit patient summary
 

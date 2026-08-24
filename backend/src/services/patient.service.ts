@@ -84,7 +84,7 @@ export async function listDoctorsForPatients(specialization?: string) {
       user: true,
       workingHours: { orderBy: { weekday: "asc" } },
     },
-    orderBy: { specialization: "asc" },
+    orderBy: [{ isDemo: "desc" }, { specialization: "asc" }],
   });
 
   return Promise.all(
@@ -96,7 +96,11 @@ export async function listDoctorsForPatients(specialization?: string) {
       slotDurationMin: doctor.slotDurationMin,
       yearsExperience: doctor.yearsExperience,
       isDemo: doctor.isDemo,
-      workingHours: doctor.workingHours,
+      workingHours: doctor.workingHours.map((row) => ({
+        weekday: row.weekday,
+        startTime: row.startTime,
+        endTime: row.endTime,
+      })),
       nextAvailableAt: await nextAvailableSlot(doctor.id),
     })),
   );
@@ -120,7 +124,11 @@ export async function getDoctorForPatient(id: string) {
     slotDurationMin: doctor.slotDurationMin,
     yearsExperience: doctor.yearsExperience,
     isDemo: doctor.isDemo,
-    workingHours: doctor.workingHours,
+    workingHours: doctor.workingHours.map((row) => ({
+      weekday: row.weekday,
+      startTime: row.startTime,
+      endTime: row.endTime,
+    })),
     nextAvailableAt: await nextAvailableSlot(doctor.id),
   };
 }

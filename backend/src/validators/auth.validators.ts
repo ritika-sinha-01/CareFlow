@@ -33,3 +33,27 @@ export const createDoctorSchema = z.object({
   yearsExperience: z.coerce.number().int().min(0).max(60).optional(),
   bio: z.string().trim().max(2000).optional(),
 });
+
+const workingHourSchema = z
+  .object({
+    weekday: z.coerce.number().int().min(0).max(6),
+    startTime: z
+      .string()
+      .regex(/^\d{2}:\d{2}(?::\d{2})?$/, "Use HH:mm")
+      .transform((value) => value.slice(0, 5)),
+    endTime: z
+      .string()
+      .regex(/^\d{2}:\d{2}(?::\d{2})?$/, "Use HH:mm")
+      .transform((value) => value.slice(0, 5)),
+  })
+  .refine((row) => row.startTime < row.endTime, "Working hours must end after they start.");
+
+export const updateDoctorSchema = z.object({
+  firstName: z.string().trim().min(1).max(80).optional(),
+  lastName: z.string().trim().min(1).max(80).optional(),
+  specialization: z.string().trim().min(2).max(80).optional(),
+  slotDurationMin: z.coerce.number().int().min(10).max(120).optional(),
+  yearsExperience: z.coerce.number().int().min(0).max(60).nullable().optional(),
+  bio: z.string().trim().max(2000).nullable().optional(),
+  workingHours: z.array(workingHourSchema).min(1).max(7).optional(),
+});

@@ -2,6 +2,20 @@
 
 CareFlow is a clinic occupancy system with optional AI, email, and calendar side effects. PostgreSQL is the source of truth for appointments, jobs, notifications, and demo simulation flags. There is no Redis, Kafka, or Kubernetes requirement.
 
+## Assignment design brief
+
+CareFlow treats an appointment as occupancy in PostgreSQL, not as a calendar widget. Patients, doctors, and admins use separate portals. Booking commits first. AI briefings, email, and Google Calendar run afterward as jobs. If those integrations are missing or fail, the visit stays `BOOKED`.
+
+**Double-booking prevention.** A visit that occupies a slot (`HELD`, `BOOKED`, or `BLOCKED`) stores `occupancy_key = startAt.toISOString()` and is unique per `(doctor_id, occupancy_key)`. Two concurrent holds on the same clinician and instant collide on that index. The API maps the unique violation to HTTP 409 `SLOT_UNAVAILABLE` and never returns a raw Prisma error. Write paths also `SELECT … FOR UPDATE` the doctor row before insert, so competing transactions serialize. Cancelled, expired, and completed rows set `occupancy_key` to null. PostgreSQL allows multiple nulls, so history does not block the slot. Reschedule updates the same row to a new start and key; if the target key is taken, the original visit is unchanged.
+
+**Slot hold.** Booking is hold-then-confirm. `POST /api/patient/holds` creates a `HELD` row with `hold_expires_at` (default five minutes, `SLOT_HOLD_MINUTES`). Confirm is `updateMany` where `status = HELD` and `holdExpiresAt > now`. An expired hold cannot confirm (`HOLD_EXPIRED`). The UI countdown uses the server timestamp. The worker also expires stale holds, but confirm does not trust the worker alone. Slot listing treats an expired hold as available even before the worker runs. Releasing a hold uses a status-guarded update so it cannot cancel a visit that already confirmed.
+
+**Doctor leave.** Leave is a civil date range in `CLINIC_TIMEZONE`. Slot listing and hold/confirm reject those dates with `DOCTOR_ON_LEAVE`. The clinician can record their own leave (`POST /api/doctor/leave`); an admin can record leave for any clinician. Recording leave does not silently delete visits. Overlapping `HELD` and `BOOKED` rows are listed as affected. Resolve cancels them, clears occupancy, invalidates appointment reminders, queues `LEAVE_AFFECTED` email to the patient and the doctor, and queues calendar deletes. History remains. A doctor cannot resolve another clinician’s leave (404).
+
+**Notification failure handling.** Confirmation, cancellation, reschedule, and reminders enqueue one notification row per recipient (`unique(appointment_id, type, user_id)`). Send happens in the worker with backoff. If email is unconfigured, rows stay queued or fail; the appointment transaction has already committed. `queueBookingSideEffects` is wrapped so AI, email, and calendar errors cannot roll back `BOOKED`. Unconfigured OpenAI sets pre-visit status to `FAILED` immediately instead of leaving it `PENDING`. Google Calendar sync is a separate job per participant. Health reports AI, email, and calendar as optional; overall status stays operational when only those are down, as long as the database, occupancy index, and worker are healthy.
+
+This brief is the assignment-length design note. The sections below expand the same model for operators.
+
 ```
 Patient / Doctor / Admin UI
             │  JWT Bearer
@@ -58,7 +72,7 @@ Two patients holding the same slot: one `201`, the other `409 SLOT_UNAVAILABLE`.
 
 ## 7. Doctor leave conflict handling
 
-Leave is stored as civil dates. Slot listing and `assertSlotBookable` reject those dates (`DOCTOR_ON_LEAVE`). Admin can resolve overlapping `HELD`/`BOOKED` visits: they are cancelled, occupancy released, reminders invalidated, and a leave notification is queued. History rows remain.
+Leave is stored as civil dates. Slot listing and `assertSlotBookable` reject those dates (`DOCTOR_ON_LEAVE`). The clinician or an admin can record leave. Resolving overlapping `HELD`/`BOOKED` visits cancels them, releases occupancy, invalidates reminders, and queues leave notifications to the patient and the doctor. History rows remain.
 
 ## 8. Cancellation
 
@@ -76,7 +90,7 @@ Pre-visit briefing is a `GENERATE_PRE_VISIT_AI` job. Failures set `aiPreVisitSta
 
 Notifications live in PostgreSQL (`QUEUED` → `PROCESSING` → `SENT` | `RETRYING` | `FAILED`). Backoff: 30s, 60s, 2m, 5m, 10m, max 5. Email simulation throws in `sendEmail`; the worker sees the same Postgres flag the API wrote. Test transport (`EMAIL_PROVIDER=test`) succeeds without a mailbox.
 
-Appointment reminders are queued on confirm (`APPOINTMENT_REMINDER`), unique per `(appointment_id, type)`. Cancel/leave invalidate them. The worker skips send if the visit is no longer `BOOKED`.
+Appointment reminders are queued on confirm (`APPOINTMENT_REMINDER`), unique per `(appointment_id, type, user_id)` so the patient and the doctor each get a row. Cancel/leave invalidate them. The worker skips send if the visit is no longer `BOOKED`.
 
 ## 12. Calendar failure isolation
 
@@ -84,7 +98,7 @@ Calendar sync is a `CALENDAR_SYNC` job queued **after** the appointment transact
 
 ## 13. Background worker
 
-The worker process calls `processDueJobs` and `processDueNotifications` on an interval and heartbeats `worker_heartbeats`. Health is `UNAVAILABLE` if the heartbeat is missing or stale. Demo flags are **not** process-local: they are rows in `demo_simulation_flags`.
+The worker process (`src/worker.ts`) or Vercel Cron (`GET /api/internal/worker/tick` with `CRON_SECRET`) calls `runWorkerTick`: heartbeat, hold expiry, jobs, medication reminders, notifications. Jobs and notifications are claimed with `updateMany` so overlapping ticks are idempotent. Health is `UNAVAILABLE` if the heartbeat is missing or older than `WORKER_HEARTBEAT_STALE_MS` (15s locally; 150s default on Vercel). Demo flags are **not** process-local: they are rows in `demo_simulation_flags`.
 
 ## 14. Clinic timezone handling
 

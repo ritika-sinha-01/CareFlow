@@ -2,22 +2,26 @@ import { z } from "zod";
 import { env } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
 import { asStringArray } from "../utils/serializers.js";
+import { normalizeSuggestedQuestions, parseUrgency } from "../utils/suggested-questions.js";
 import { shouldSimulate } from "./demo-simulation.service.js";
 import { recordSystemEvent } from "./system-event.service.js";
-
-const briefingSchema = z.object({
-  urgency: z.enum(["LOW", "MEDIUM", "HIGH"]),
-  chiefComplaint: z.string().trim().min(1).max(240),
-  keySymptoms: z.array(z.string().trim().min(1)).max(8),
-  suggestedQuestions: z.array(z.string().trim().min(1)).max(8),
-});
+import { queueUserNotification } from "./notification.service.js";
 
 const SYSTEM_PROMPT = `You prepare a short pre-visit briefing for a clinician from patient-reported symptoms.
 Rules:
 - This is NOT a diagnosis, treatment plan, or triage decision.
 - Be conservative. Use HIGH urgency only for possible emergency warning signs (severe chest pain, difficulty breathing, sudden neurological symptoms, uncontrolled bleeding, or similar).
-- Return JSON only with keys: urgency (LOW|MEDIUM|HIGH), chiefComplaint (one sentence), keySymptoms (string array), suggestedQuestions (string array of questions the clinician might ask).
+- Return JSON only with keys: urgencyLevel (Low|Medium|High), chiefComplaint (one sentence), suggestedQuestions (exactly 3 strings the clinician might ask).
+- suggestedQuestions MUST contain exactly 3 items.
 - Do not invent facts that are not in the symptoms text.`;
+
+const briefingSchema = z.object({
+  urgency: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+  urgencyLevel: z.string().optional(),
+  chiefComplaint: z.string().trim().min(1).max(240),
+  keySymptoms: z.array(z.string().trim().min(1)).max(8).optional(),
+  suggestedQuestions: z.array(z.string()).optional(),
+});
 
 const POST_VISIT_PROMPT = `You write a short, plain-language summary of a clinic visit for the patient.
 Rules:
@@ -39,8 +43,6 @@ const postVisitSchema = z.object({
     .max(12)
     .optional(),
 });
-
-type Briefing = z.infer<typeof briefingSchema>;
 
 export type AiAdapterName = "openai" | "mock" | "unconfigured";
 
@@ -66,10 +68,13 @@ export class MockAiAdapter implements AiCompletionAdapter {
   async completeJson(input: { system: string; user: string }): Promise<string> {
     if (input.system.includes("pre-visit briefing")) {
       return JSON.stringify({
-        urgency: "LOW",
+        urgencyLevel: "Low",
         chiefComplaint: "Patient-reported symptoms for clinician review",
-        keySymptoms: ["As described by the patient"],
-        suggestedQuestions: ["How long have these symptoms lasted?"],
+        suggestedQuestions: [
+          "How long have these symptoms lasted?",
+          "Is anything making the symptoms better or worse?",
+          "Have you noticed any other symptoms along with this?",
+        ],
       });
     }
     return JSON.stringify({
@@ -189,11 +194,16 @@ export async function generatePreVisitBriefing(appointmentId: string): Promise<v
     });
     const parsed = briefingSchema.safeParse(JSON.parse(content));
     if (!parsed.success) throw new Error("AI provider returned an invalid briefing.");
-    const briefing: Briefing = {
-      ...parsed.data,
+    const urgency = parseUrgency(parsed.data.urgencyLevel) ?? parsed.data.urgency ?? "LOW";
+    const briefing = {
+      urgency,
+      chiefComplaint: parsed.data.chiefComplaint,
       keySymptoms: asStringArray(parsed.data.keySymptoms).slice(0, 8),
-      suggestedQuestions: asStringArray(parsed.data.suggestedQuestions).slice(0, 8),
+      suggestedQuestions: normalizeSuggestedQuestions(parsed.data.suggestedQuestions),
     };
+    if (briefing.suggestedQuestions.length !== 3) {
+      throw new Error("AI provider returned an invalid briefing.");
+    }
 
     await prisma.appointment.update({
       where: { id: appointment.id },
@@ -310,17 +320,14 @@ export async function generatePostVisitSummary(appointmentId: string): Promise<v
     });
 
     if (appointment.patient) {
-      await prisma.notification.create({
-        data: {
-          userId: appointment.patient.id,
-          appointmentId: appointment.id,
-          type: "POST_VISIT_SUMMARY",
-          status: "QUEUED",
-          toEmail: appointment.patient.email,
-          subject: "A summary of your CareFlow visit is ready",
-          body: "Your clinician recorded this visit. The summary is for you and is not a diagnosis from CareFlow.",
-        },
-      }).catch(() => undefined);
+      await queueUserNotification({
+        userId: appointment.patient.id,
+        email: appointment.patient.email,
+        appointmentId: appointment.id,
+        type: "POST_VISIT_SUMMARY",
+        subject: "A summary of your CareFlow visit is ready",
+        body: "Your clinician recorded this visit. The summary is for you and is not a diagnosis from CareFlow.",
+      });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Patient summary is unavailable.";

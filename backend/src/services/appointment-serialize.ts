@@ -1,4 +1,12 @@
-import type { Appointment, AppointmentCalendarEvent, AppointmentTimelineEvent, Doctor, Prescription, User } from "@prisma/client";
+import type {
+  Appointment,
+  AppointmentCalendarEvent,
+  AppointmentTimelineEvent,
+  Doctor,
+  Notification,
+  Prescription,
+  User,
+} from "@prisma/client";
 import { asPrescriptionItems, asStringArray, displayName } from "../utils/serializers.js";
 
 type CalendarEventRecord = AppointmentCalendarEvent & {
@@ -11,6 +19,7 @@ type AppointmentRecord = Appointment & {
   timeline?: AppointmentTimelineEvent[];
   prescriptions?: Prescription[];
   calendarEvents?: CalendarEventRecord[];
+  notifications?: Array<Pick<Notification, "id" | "type" | "status" | "userId">>;
 };
 
 function serializeCalendarParticipants(appointment: AppointmentRecord) {
@@ -35,6 +44,24 @@ function serializeCalendarParticipants(appointment: AppointmentRecord) {
   ];
 }
 
+function serializeNotifications(appointment: AppointmentRecord, audience: "patient" | "doctor" | "admin") {
+  const rows = appointment.notifications ?? [];
+  const filtered =
+    audience === "admin"
+      ? rows
+      : audience === "patient"
+        ? rows.filter((row) => row.userId === appointment.patient?.id)
+        : rows.filter((row) => row.userId === appointment.doctor.user.id);
+  return filtered.map((row) => ({
+    id: row.id,
+    type: row.type,
+    status: row.status,
+  }));
+}
+
+const AI_DISCLAIMER = "AI-generated visit briefing. Not a medical diagnosis.";
+const POST_VISIT_DISCLAIMER = "Patient summary is AI-assisted. It is not a diagnosis.";
+
 export function serializeAppointment(
   appointment: AppointmentRecord,
   audience: "patient" | "doctor" | "admin",
@@ -51,6 +78,7 @@ export function serializeAppointment(
     cancelReason: appointment.cancelReason,
     calendarSyncStatus: appointment.calendarSyncStatus,
     calendarParticipants: serializeCalendarParticipants(appointment),
+    notifications: serializeNotifications(appointment, audience),
     doctor: {
       id: appointment.doctor.id,
       name: doctorName,
@@ -73,6 +101,16 @@ export function serializeAppointment(
       symptoms: appointment.symptoms,
       patientSummary: appointment.patientSummary,
       followUpSteps: asStringArray(appointment.followUpSteps),
+      ai: {
+        status: appointment.aiPreVisitStatus,
+        error: appointment.aiPreVisitError,
+        disclaimer: AI_DISCLAIMER,
+      },
+      postVisit: {
+        status: appointment.aiPostVisitStatus ?? "IDLE",
+        error: appointment.aiPostVisitError,
+        disclaimer: POST_VISIT_DISCLAIMER,
+      },
       prescriptions: (appointment.prescriptions ?? []).map((item) => ({
         id: item.id,
         items: asPrescriptionItems(item.items),
@@ -103,7 +141,7 @@ export function serializeAppointment(
       suggestedQuestions: asStringArray(appointment.aiSuggestedQuestions),
       error: appointment.aiPreVisitError,
       generatedAt: appointment.aiPreVisitGeneratedAt?.toISOString() ?? null,
-      disclaimer: "AI-generated visit briefing. Not a medical diagnosis.",
+      disclaimer: AI_DISCLAIMER,
     },
     prescriptions: (appointment.prescriptions ?? []).map((item) => ({
       id: item.id,
@@ -114,7 +152,7 @@ export function serializeAppointment(
     postVisit: {
       status: appointment.aiPostVisitStatus ?? "IDLE",
       error: appointment.aiPostVisitError,
-      disclaimer: "Patient summary is AI-assisted. It is not a diagnosis.",
+      disclaimer: POST_VISIT_DISCLAIMER,
     },
     timeline: (appointment.timeline ?? []).map((event) => ({
       id: event.id,
@@ -134,5 +172,9 @@ export const appointmentInclude = {
     include: {
       owner: { select: { id: true, firstName: true, lastName: true, role: true } },
     },
+  },
+  notifications: {
+    orderBy: { createdAt: "asc" as const },
+    select: { id: true, type: true, status: true, userId: true },
   },
 };

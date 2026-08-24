@@ -13,10 +13,9 @@ describe("integration adapters", () => {
         user: "headache",
       }),
     );
-    expect(briefing.urgency).toBe("LOW");
+    expect(briefing.urgencyLevel).toBe("Low");
     expect(briefing.chiefComplaint).toBeTruthy();
-    expect(Array.isArray(briefing.keySymptoms)).toBe(true);
-    expect(Array.isArray(briefing.suggestedQuestions)).toBe(true);
+    expect(briefing.suggestedQuestions).toHaveLength(3);
   });
 
   it("records test email without a live mailbox", async () => {

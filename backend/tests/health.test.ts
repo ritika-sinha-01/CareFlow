@@ -36,13 +36,25 @@ describe("system health rollup", () => {
     expect(status).toBe("OPERATIONAL");
   });
 
-  it("is degraded when email is unconfigured", () => {
+  it("does not fail the product when optional AI, email, and calendar are unconfigured", () => {
     const status = deriveOverallStatus([
       component("DATABASE", "OPERATIONAL"),
       component("APPOINTMENT_ENGINE", "OPERATIONAL"),
-      component("AI_SERVICE", "UNAVAILABLE"),
-      component("EMAIL_SERVICE", "UNAVAILABLE"),
+      component("AI_SERVICE", "UNAVAILABLE", true),
+      component("EMAIL_SERVICE", "UNAVAILABLE", true),
       component("BACKGROUND_WORKER", "OPERATIONAL"),
+      component("GOOGLE_CALENDAR", "UNAVAILABLE", true),
+    ]);
+    expect(status).toBe("OPERATIONAL");
+  });
+
+  it("is degraded when the background worker is unavailable", () => {
+    const status = deriveOverallStatus([
+      component("DATABASE", "OPERATIONAL"),
+      component("APPOINTMENT_ENGINE", "OPERATIONAL"),
+      component("AI_SERVICE", "UNAVAILABLE", true),
+      component("EMAIL_SERVICE", "UNAVAILABLE", true),
+      component("BACKGROUND_WORKER", "UNAVAILABLE"),
       component("GOOGLE_CALENDAR", "UNAVAILABLE", true),
     ]);
     expect(status).toBe("DEGRADED");
@@ -74,5 +86,20 @@ describe("liveness and readiness endpoints", () => {
   it("rejects unauthenticated worker ticks", async () => {
     const response = await request(app).get("/api/internal/worker/tick");
     expect(response.status).toBe(401);
+  });
+
+  it("marks AI, email, and calendar as optional on the live health payload", async () => {
+    const response = await request(app).get("/api/health");
+    expect([200, 503]).toContain(response.status);
+    const optional = new Set(
+      (response.body.data.components as Array<{ name: string; optional?: boolean }>)
+        .filter((item) => item.optional)
+        .map((item) => item.name),
+    );
+    expect(optional.has("AI_SERVICE")).toBe(true);
+    expect(optional.has("EMAIL_SERVICE")).toBe(true);
+    expect(optional.has("GOOGLE_CALENDAR")).toBe(true);
+    expect(optional.has("DATABASE")).toBe(false);
+    expect(optional.has("APPOINTMENT_ENGINE")).toBe(false);
   });
 });

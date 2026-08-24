@@ -17,36 +17,99 @@ Built for patients, doctors, and clinic administrators, CareFlow combines a six-
 - 🔄 **Reliable background jobs** — email, AI, reminders, and calendar operations use retryable jobs.
 - 🏥 **Leave conflict resolution** — administrators can identify and resolve appointments affected by doctor leave.
 - 🛡️ **RBAC + resource isolation** — unauthorized appointment access returns 404 rather than leaking resource existence.
-- 🧪 **82 automated tests** — backend and frontend behavior is covered, including concurrency and failure scenarios.
+- 🧪 **Automated tests** — backend and frontend behavior is covered, including concurrency and failure scenarios.
 - 🌍 **Clinic timezone aware** — civil-time scheduling is handled using the configured clinic timezone while timestamps remain UTC.
 
 > **AI-generated content is assistive only and is never presented as a medical diagnosis.**
 
-## Live Demo
+## Demo
 
-**Hosted application:** `COMING SOON`
+Use this section for a 5–10 minute assignment evaluation. The live UI reads the real database and APIs. It does not invent clinician lists, slots, or bookings.
 
-**API health:** `COMING SOON`
+**Frontend:** https://care-flow-frontend-eta.vercel.app  
+**API:** https://careflow-backend-six.vercel.app  
+**Health:** https://careflow-backend-six.vercel.app/api/health  
+**Public doctors:** https://careflow-backend-six.vercel.app/api/doctors
 
-### Demo accounts
+Optional services (OpenAI, email, Google Calendar) may report **UNAVAILABLE**. That is honest. Core booking still works.
 
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | `admin@careflow.demo` | `CareFlow!demo1` |
-| Patient | `aarav.gupta@careflow.demo` | `CareFlow!demo1` |
-| Doctor | `ananya.sharma@careflow.demo` | `CareFlow!demo1` |
+Production does **not** include the local seed patient (`aarav.gupta@careflow.demo`) or local seed admin (`admin@careflow.demo`). Register a new patient. Create the production admin with the guarded command below.
 
-> Demo accounts contain synthetic data only. They do not represent real patients or clinicians.
+### Demo patient
 
-### Recommended reviewer journey
+There is no shared production patient account.
 
-1. Patient → search doctor → select slot → enter symptoms → confirm appointment.
-2. Observe the five-minute server-side hold.
-3. Doctor → open the appointment → review the pre-visit brief.
-4. Doctor → add consultation notes → prescribe medication → complete visit.
-5. Admin → inspect clinic health and notification reliability.
-6. Admin → simulate an integration failure and observe retry/recovery behavior.
-7. Demonstrate concurrent booking protection: one request succeeds while the competing request receives `SLOT_UNAVAILABLE`.
+1. Open the landing page and choose **Create patient account**, or go to `/register`.
+2. Enter a first name, last name, unique email, and a password of at least 10 characters with a letter and a number.
+3. After registration you land on **Find care**, which loads `GET /api/patient/doctors`.
+
+Use any email you control if you want to inspect queued notifications later. Email delivery still requires Resend or SMTP.
+
+### Demo doctors
+
+Six synthetic clinicians are already in the production database from the guarded production demo seed. They are not real clinicians.
+
+Login email format: `{firstname}.{lastname}@careflow.demo`  
+Password (intentional demo seed only): `CareFlow!demo1`
+
+| Name | Specialty | Email |
+|------|-----------|-------|
+| Ananya Sharma | Cardiology | `ananya.sharma@careflow.demo` |
+| Rohan Mehta | Dermatology | `rohan.mehta@careflow.demo` |
+| Priya Nair | General Practice | `priya.nair@careflow.demo` |
+| Vikram Joshi | Pediatrics | `vikram.joshi@careflow.demo` |
+| Sara Khan | Orthopedics | `sara.khan@careflow.demo` |
+| Dev Patel | Neurology | `dev.patel@careflow.demo` |
+
+Typical hours: Monday–Friday, 09:00–17:00 clinic time (`Asia/Kolkata`). Weekends are closed.
+
+Do **not** run `npm run db:seed` against Neon. Do **not** re-run `npm run db:seed:production-demo` unless you are repairing a wiped database.
+
+### Demo admin
+
+There is no default production admin password in this repository.
+
+Create the admin with the production admin seed (shell only, never a Vercel env flag):
+
+```powershell
+cd backend
+$env:NODE_ENV = "production"
+$env:ALLOW_PRODUCTION_ADMIN_SEED = "true"
+$env:PRODUCTION_ADMIN_EMAIL = "<your-admin-email>"
+$env:PRODUCTION_ADMIN_PASSWORD = "<10+ chars, letter and number>"
+$env:DATABASE_URL = "<Neon pooled URL>"
+$env:DIRECT_URL = "<Neon direct URL>"
+npm run db:seed:production-admin
+```
+
+The command hashes the password and does not print it. Full constraints: [docs/deploy.md](docs/deploy.md).
+
+Local `npm run db:seed` still creates `admin@careflow.demo` for laptop demos only.
+
+### Demo walkthrough (5–10 minutes)
+
+1. Open the landing page. Confirm the six doctors load from the API. Read **System health**: booking should be operational; AI, email, and calendar may be unavailable.
+2. Register a patient and sign in.
+3. Open **Find care**. You should see the six demo doctors and their specialties.
+4. Select one clinician (Cardiology is a reliable first choice).
+5. Continue to book and choose a **weekday**.
+6. Available slots come from occupancy, not a mock grid. Pick an **Available** time (this starts a five-minute server hold).
+7. Enter symptoms (at least a short sentence).
+8. Confirm the booking.
+9. You land on the appointment page: **Appointment confirmed**.
+10. Check **Pre-visit briefing**. If OpenAI is configured it may show pending or ready. If not, status is unavailable/failed with a clear fallback. The booking stays confirmed.
+11. Check **Reminders and email** plus **Calendar sync**. Queued, failed, or not-connected is expected when those services are unconfigured.
+12. Open **Appointments** in the patient portal and confirm the same visit is listed.
+13. Sign out. Sign in as the demo doctor you booked (`ananya.sharma@careflow.demo` / `CareFlow!demo1` unless you chose another clinician).
+14. Open **Appointments** and select the visit.
+15. Save consultation notes (patients cannot see these).
+16. Issue a prescription (this also creates a medication reminder).
+17. Choose **Complete visit and generate summary**. If AI is configured, a patient-friendly summary appears; if not, the UI shows a graceful fallback and notes/prescriptions remain saved.
+18. Confirm reminder/notification rows still show queued, sent, retrying, or failed — never as a reason the visit disappeared.
+19. On **Profile**, record leave if you want to show overlap detection. Notify-and-release emails the patient and the doctor; it does not silently delete history.
+20. Sign out. Sign in as the production admin you seeded. Open **Doctors** to create or edit a clinician, then **Leave** to manage clinic-wide leave.
+
+Local laptop walkthrough with simulation flags: [docs/demo-guide.md](docs/demo-guide.md).
 
 ## Product Overview
 
@@ -183,7 +246,7 @@ Step-by-step reviewer script: [docs/demo-guide.md](docs/demo-guide.md).
 - [Database schema](docs/database-schema.md)
 - [AI prompts](docs/ai-prompts.md)
 - [Google Calendar setup](docs/google-calendar-setup.md)
-- [Demo guide](docs/demo-guide.md) — 13 reviewer steps
+- [Demo guide](docs/demo-guide.md) — local seed walkthrough; production evaluator path is in the README Demo section
 - [Production deploy](docs/deploy.md) — Neon, Render Starter, Vercel
 
 ## Environment variables
@@ -194,24 +257,22 @@ Email: Resend, SMTP, or `EMAIL_PROVIDER=test` (automated tests). Google Calendar
 
 Copy `VITE_CLINIC_TIMEZONE=Asia/Kolkata` into `frontend/.env` if you want the UI timezone explicit; it already defaults to Kolkata.
 
-## Production topology (do not deploy from this change set)
+## Production topology
 
-Intended hosting:
+Intended hosting (this repo is already wired this way):
 
-- **Vercel (frontend)** — Root Directory `frontend`. `vercel.json` rewrites SPA routes to `index.html`. Set `VITE_API_URL` to the API origin.
+- **Vercel (frontend)** — Root Directory `frontend`. `vercel.json` rewrites SPA routes to `index.html`. Set `VITE_API_URL` to the API origin (`https://careflow-backend-six.vercel.app`).
 - **Vercel (API)** — Root Directory `backend`. Express is exported as a serverless function (`backend/api/index.ts`).
-- **Worker** — Vercel Cron `GET /api/internal/worker/tick`, or optional Render worker (`render.yaml` worker-only). A 2-second poll loop cannot run on Vercel Functions.
+- **Worker** — Vercel Cron `GET /api/internal/worker/tick` with `CRON_SECRET`. Optional Render worker (`render.yaml`) if you need the original 2-second loop. A long-lived poll loop cannot run on Vercel Functions.
 - **Neon** — `DATABASE_URL` pooled; `DIRECT_URL` required in production for `prisma migrate deploy`.
 
 Production API builds run `prisma migrate deploy`. Do **not** run `prisma migrate dev` or `prisma migrate reset` in production.
 
+`GET /api/health/ready` is the deploy health check (database + occupancy index). `GET /api/health` is the diagnostic rollup (database, appointment engine, AI, email, worker heartbeat, Google Calendar). Optional integrations report `UNAVAILABLE` when unconfigured; that is honest, not a fake green.
+
 Step-by-step: [docs/deploy.md](docs/deploy.md).
 
-Vercel build environment: `VITE_API_URL` = public Render API origin (no trailing slash). Do not leave it empty. `VITE_DEMO_MODE` is forced off in production builds.
-
-Render health check: `GET /api/health/ready` (database + occupancy index). `GET /api/health/live` is process liveness. `GET /api/health` remains the diagnostic rollup.
-
-Seed (`npm run db:seed`) refuses to run when `APP_ENV` or `NODE_ENV` is `production`.
+Seed (`npm run db:seed`) refuses to run when `APP_ENV` or `NODE_ENV` is `production`. Production demo doctors and production admin use separate guarded scripts.
 
 ## Architecture
 

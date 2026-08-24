@@ -28,6 +28,8 @@ export const leaveSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+export const ownLeaveSchema = leaveSchema.omit({ doctorId: true });
+
 export const calendarConnectSchema = z.object({
   returnTo: z.string().url().optional(),
 });

@@ -2,8 +2,9 @@ import { useParams } from "react-router-dom";
 import { CalendarConnectionCard } from "@/components/CalendarConnectionCard";
 import { CalendarParticipants } from "@/components/CalendarParticipants";
 import { AppointmentCard, NextVisitHero } from "@/components/AppointmentCard";
-import { CalendarStatusBadge, UrgencyBadge } from "@/components/DomainBadges";
+import { AppointmentStatusBadge, CalendarStatusBadge, UrgencyBadge } from "@/components/DomainBadges";
 import { EmptyState, PageHeader, QueryError, SkeletonBlock } from "@/components/Page";
+import { NotificationStatusList, postVisitStatusCopy } from "@/components/SideEffectStatus";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,10 +12,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/auth/AuthContext";
 import { apiRequest, ApiRequestError } from "@/lib/api";
-import { formatDateTime, greetingForNow, WEEKDAYS } from "@/lib/dates";
+import { formatDateTime, formatDate, greetingForNow, WEEKDAYS } from "@/lib/dates";
 import type { AppointmentSummary, PublicUser } from "@/lib/types";
 import { useApi } from "@/lib/use-api";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 type DoctorDashboard = {
   user: PublicUser;
@@ -119,6 +120,9 @@ export function DoctorAppointmentsPage() {
       <PageHeader title="Appointments" description="Patients on your schedule." />
       {loading ? <SkeletonBlock className="h-40" /> : null}
       {error ? <QueryError message={error} /> : null}
+      {!loading && !error && (data?.length ?? 0) === 0 ? (
+        <EmptyState title="No appointments yet" description="When a patient books with you, the visit appears here from the database." />
+      ) : null}
       <div className="space-y-3">
         {data?.map((item) => (
           <AppointmentCard
@@ -165,10 +169,12 @@ export function DoctorAppointmentDetailPage() {
         description={`${formatDateTime(data.startAt)} · ${data.doctor.specialization}`}
       />
       <div className="flex flex-wrap gap-2">
+        <AppointmentStatusBadge status={data.status} />
         <CalendarStatusBadge status={data.calendarSyncStatus} />
-        {data.ai ? <UrgencyBadge urgency={data.ai.urgency} /> : null}
+        {data.ai?.status === "READY" ? <UrgencyBadge urgency={data.ai.urgency ?? null} /> : null}
       </div>
       <CalendarParticipants participants={data.calendarParticipants} />
+      <NotificationStatusList items={data.notifications} />
       {retryError ? <QueryError message={retryError} /> : null}
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <PreVisitBrief
@@ -230,14 +236,20 @@ function PreVisitBrief({
       </CardHeader>
       <CardContent className="space-y-4">
         {pending ? (
-          <p className="text-sm text-muted-foreground">A briefing is being prepared. Original symptoms remain the source of truth.</p>
+          <p className="text-sm text-muted-foreground">
+            A briefing is being prepared. Original symptoms remain the source of truth. The appointment is already
+            confirmed.
+          </p>
         ) : null}
         {failed && !pending ? (
           <div>
             <p className="text-sm">
               {ai?.error ?? "A briefing is not available yet. Original symptoms are preserved."}
             </p>
-            <p className="mt-2 text-xs text-muted-foreground">You remain responsible for clinical judgment.</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              OpenAI is optional. A missing or failed briefing does not change this appointment. You remain responsible
+              for clinical judgment.
+            </p>
             {ai?.status === "FAILED" ? (
               <Button className="mt-3" size="sm" variant="outline" disabled={retrying} onClick={onRetry}>
                 {retrying ? "Queuing…" : "Retry briefing"}
@@ -247,12 +259,12 @@ function PreVisitBrief({
         ) : null}
         {ready && ai ? (
           <>
-            <UrgencyBadge urgency={ai.urgency} />
+            <UrgencyBadge urgency={ai.urgency ?? null} />
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Chief complaint</p>
               <p className="mt-1 text-sm">{ai.chiefComplaint}</p>
             </div>
-            {ai.keySymptoms.length > 0 ? (
+            {ai.keySymptoms && ai.keySymptoms.length > 0 ? (
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Key symptoms</p>
                 <ul className="mt-1 list-disc pl-5 text-sm">
@@ -262,7 +274,7 @@ function PreVisitBrief({
                 </ul>
               </div>
             ) : null}
-            {ai.suggestedQuestions.length > 0 ? (
+            {ai.suggestedQuestions && ai.suggestedQuestions.length > 0 ? (
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Suggested questions</p>
                 <ol className="mt-1 list-decimal pl-5 text-sm">
@@ -464,17 +476,24 @@ function VisitWorkflow({
         </CardHeader>
         <CardContent className="space-y-3">
           {appointment.postVisit?.status === "PENDING" || appointment.postVisit?.status === "RETRYING" ? (
-            <p className="text-sm text-muted-foreground">A patient-facing summary is being prepared.</p>
+            <p className="text-sm text-muted-foreground">
+              {postVisitStatusCopy(appointment.postVisit.status, appointment.postVisit.error)}
+            </p>
           ) : null}
           {appointment.postVisit?.status === "FAILED" ? (
-            <p className="text-sm">{appointment.postVisit.error}</p>
+            <div>
+              <p className="text-sm">{postVisitStatusCopy(appointment.postVisit.status, appointment.postVisit.error)}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                OpenAI is optional. Notes and prescriptions stay on the record even if a summary cannot be generated.
+              </p>
+            </div>
           ) : null}
           {appointment.patientSummary ? (
             <p className="text-sm leading-relaxed">{appointment.patientSummary}</p>
           ) : null}
           {booked ? (
             <Button size="sm" disabled={busy === "summary"} onClick={() => void sendSummary()}>
-              {busy === "summary" ? "Queuing…" : "Send patient summary"}
+              {busy === "summary" ? "Queuing…" : "Complete visit and generate summary"}
             </Button>
           ) : null}
         </CardContent>
@@ -546,6 +565,111 @@ export function DoctorProfilePage() {
           ))}
         </CardContent>
       </Card>
+      <DoctorLeaveCard />
     </div>
+  );
+}
+
+function DoctorLeaveCard() {
+  const { token } = useAuth();
+  const { data, error, loading, refetch } = useApi<
+    Array<{
+      id: string;
+      startDate: string;
+      endDate: string;
+      reason: string | null;
+      affectedAppointments: number;
+    }>
+  >("/api/doctor/leave");
+  const [formError, setFormError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) return;
+    const form = new FormData(event.currentTarget);
+    setBusy(true);
+    setFormError(null);
+    try {
+      await apiRequest("/api/doctor/leave", {
+        method: "POST",
+        token,
+        body: {
+          startDate: form.get("startDate"),
+          endDate: form.get("endDate"),
+          reason: form.get("reason") || undefined,
+        },
+      });
+      event.currentTarget.reset();
+      refetch();
+    } catch (caught) {
+      setFormError(caught instanceof ApiRequestError ? caught.message : "Leave could not be saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onResolve(id: string) {
+    if (!token) return;
+    setBusy(true);
+    setFormError(null);
+    try {
+      await apiRequest(`/api/doctor/leave/${id}/resolve`, { method: "POST", token });
+      refetch();
+    } catch (caught) {
+      setFormError(caught instanceof ApiRequestError ? caught.message : "Affected visits could not be released.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle className="text-base">Leave</CardTitle>
+        <CardDescription>
+          Recording leave does not silently delete visits. Overlaps are listed so you can notify patients and release
+          the times.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {formError ? <QueryError message={formError} /> : null}
+        <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => void onCreate(event)}>
+          <div className="space-y-2">
+            <Label htmlFor="doctor-leave-start">From</Label>
+            <Input id="doctor-leave-start" name="startDate" type="date" required />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="doctor-leave-end">To</Label>
+            <Input id="doctor-leave-end" name="endDate" type="date" required />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="doctor-leave-reason">Reason (optional)</Label>
+            <Input id="doctor-leave-reason" name="reason" />
+          </div>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Saving…" : "Save leave"}
+          </Button>
+        </form>
+        {loading ? <SkeletonBlock className="h-20" /> : null}
+        {error ? <QueryError message={error} /> : null}
+        {data?.map((item) => (
+          <div key={item.id} className="rounded-md border border-border px-3 py-3 text-sm">
+            <p>
+              {formatDate(item.startDate)} – {formatDate(item.endDate)}
+              {item.reason ? ` · ${item.reason}` : ""}
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              {item.affectedAppointments} appointment{item.affectedAppointments === 1 ? "" : "s"} affected
+            </p>
+            {item.affectedAppointments > 0 ? (
+              <Button className="mt-3" size="sm" variant="outline" disabled={busy} onClick={() => void onResolve(item.id)}>
+                Notify and release visits
+              </Button>
+            ) : null}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }

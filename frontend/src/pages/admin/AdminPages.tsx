@@ -1,8 +1,9 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { AppointmentCard } from "@/components/AppointmentCard";
 import { AppointmentStatusBadge, NotificationStatusBadge } from "@/components/DomainBadges";
 import { StatusBadge } from "@/components/StatusBadge";
+import { HealthComponentRow } from "@/components/SideEffectStatus";
 import { EmptyState, PageHeader, QueryError, SkeletonBlock } from "@/components/Page";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,13 +72,12 @@ export function AdminDashboardPage() {
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2">
           {data.health.components.map((component) => (
-            <div key={component.name} className="flex items-start justify-between gap-3 rounded-xl border border-border/80 bg-muted/30 px-3 py-3">
-              <div>
-                <p className="text-sm font-medium">{component.name.replaceAll("_", " ")}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{component.detail}</p>
-              </div>
-              <StatusBadge label={component.status} tone={healthTone(component.status)} />
-            </div>
+            <HealthComponentRow
+              key={component.name}
+              name={component.name}
+              status={component.status}
+              detail={component.detail}
+            />
           ))}
         </CardContent>
       </Card>
@@ -305,30 +305,225 @@ export function AdminDoctorNewPage() {
   );
 }
 
+type WorkingHourRow = { weekday: number; startTime: string; endTime: string };
+
 export function AdminDoctorDetailPage() {
   const { id } = useParams();
-  const { data, error, loading } = useApi<{
+  const { token } = useAuth();
+  const { data, error, loading, refetch } = useApi<{
     specialization: string;
     bio: string | null;
     slotDurationMin: number;
+    yearsExperience: number | null;
     isDemo: boolean;
     user: { firstName: string; lastName: string; email: string };
-    workingHours: Array<{ weekday: number; startTime: string; endTime: string }>;
+    workingHours: WorkingHourRow[];
+    leaves: Array<{ id: string; startDate: string; endDate: string; reason: string | null }>;
   }>(id ? `/api/admin/doctors/${id}` : null);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [specialization, setSpecialization] = useState("");
+  const [bio, setBio] = useState("");
+  const [slotDurationMin, setSlotDurationMin] = useState(30);
+  const [yearsExperience, setYearsExperience] = useState("");
+  const [workingHours, setWorkingHours] = useState<WorkingHourRow[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!data) return;
+    setFirstName(data.user.firstName);
+    setLastName(data.user.lastName);
+    setSpecialization(data.specialization);
+    setBio(data.bio ?? "");
+    setSlotDurationMin(data.slotDurationMin);
+    setYearsExperience(data.yearsExperience == null ? "" : String(data.yearsExperience));
+    setWorkingHours(
+      data.workingHours.length > 0
+        ? data.workingHours.map((row) => ({ ...row }))
+        : [{ weekday: 1, startTime: "09:00", endTime: "17:00" }],
+    );
+  }, [data]);
+
   if (loading) return <SkeletonBlock className="h-40" />;
   if (error) return <QueryError message={error} />;
-  if (!data) return null;
+  if (!data || !id) return null;
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) return;
+    setSaving(true);
+    setFormError(null);
+    try {
+      await apiRequest(`/api/admin/doctors/${id}`, {
+        method: "PATCH",
+        token,
+        body: {
+          firstName,
+          lastName,
+          specialization,
+          bio: bio.trim() ? bio : null,
+          slotDurationMin,
+          yearsExperience: yearsExperience === "" ? null : Number(yearsExperience),
+          workingHours,
+        },
+      });
+      refetch();
+    } catch (caught) {
+      setFormError(caught instanceof ApiRequestError ? caught.message : "This profile could not be updated.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateHour(index: number, patch: Partial<WorkingHourRow>) {
+    setWorkingHours((rows) => rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
+  }
+
   return (
-    <div>
+    <div className="space-y-6">
       <PageHeader
         title={`${data.user.firstName} ${data.user.lastName}`}
         description={`${data.specialization}${data.isDemo ? " · Demo profile" : ""}`}
       />
+      {formError ? <QueryError message={formError} /> : null}
       <Card>
-        <CardContent className="space-y-2 pt-6 text-sm text-muted-foreground">
-          <p>{data.user.email}</p>
-          <p>{data.bio}</p>
-          <p>{data.slotDurationMin}-minute slots</p>
+        <CardHeader>
+          <CardTitle className="text-base">Profile and working hours</CardTitle>
+          <CardDescription>Email stays on the sign-in account. Leave is recorded from the leave center.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={onSubmit}>
+            <p className="text-sm text-muted-foreground">{data.user.email}</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="firstName">First name</Label>
+                <Input id="firstName" value={firstName} onChange={(event) => setFirstName(event.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last name</Label>
+                <Input id="lastName" value={lastName} onChange={(event) => setLastName(event.target.value)} required />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="specialization">Specialization</Label>
+              <Input
+                id="specialization"
+                value={specialization}
+                onChange={(event) => setSpecialization(event.target.value)}
+                required
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="slotDurationMin">Slot duration (minutes)</Label>
+                <Input
+                  id="slotDurationMin"
+                  type="number"
+                  min={10}
+                  max={120}
+                  value={slotDurationMin}
+                  onChange={(event) => setSlotDurationMin(Number(event.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="yearsExperience">Years of experience</Label>
+                <Input
+                  id="yearsExperience"
+                  type="number"
+                  min={0}
+                  max={60}
+                  value={yearsExperience}
+                  onChange={(event) => setYearsExperience(event.target.value)}
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bio">Bio</Label>
+              <Input id="bio" value={bio} onChange={(event) => setBio(event.target.value)} />
+            </div>
+            <div className="space-y-3">
+              <Label>Working hours</Label>
+              {workingHours.map((row, index) => (
+                <div key={`${row.weekday}-${index}`} className="grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor={`weekday-${index}`}>Weekday</Label>
+                    <select
+                      id={`weekday-${index}`}
+                      className="flex h-11 w-full rounded-md border border-input bg-card px-3 text-sm"
+                      value={row.weekday}
+                      onChange={(event) => updateHour(index, { weekday: Number(event.target.value) })}
+                    >
+                      {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((label, weekday) => (
+                        <option key={label} value={weekday}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`start-${index}`}>Start</Label>
+                    <Input
+                      id={`start-${index}`}
+                      type="time"
+                      value={row.startTime}
+                      onChange={(event) => updateHour(index, { startTime: event.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`end-${index}`}>End</Label>
+                    <Input
+                      id={`end-${index}`}
+                      type="time"
+                      value={row.endTime}
+                      onChange={(event) => updateHour(index, { endTime: event.target.value })}
+                      required
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={workingHours.length <= 1}
+                    onClick={() => setWorkingHours((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                disabled={workingHours.length >= 7}
+                onClick={() =>
+                  setWorkingHours((rows) => [...rows, { weekday: 1, startTime: "09:00", endTime: "17:00" }])
+                }
+              >
+                Add weekday
+              </Button>
+            </div>
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving…" : "Save profile"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Leave</CardTitle>
+          <CardDescription>Recording leave does not silently cancel visits.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          {data.leaves.length === 0 ? <p className="text-muted-foreground">No leave recorded for this clinician.</p> : null}
+          {data.leaves.map((leave) => (
+            <p key={leave.id}>
+              {formatDate(leave.startDate)} – {formatDate(leave.endDate)}
+              {leave.reason ? ` · ${leave.reason}` : ""}
+            </p>
+          ))}
+          <Link to="/admin/leave" className="inline-block font-medium underline-offset-4 hover:underline">
+            Open leave center
+          </Link>
         </CardContent>
       </Card>
     </div>

@@ -6,6 +6,7 @@ import { ProtectedRoute } from "../src/components/AppShell";
 import { SlotGrid } from "../src/components/SlotGrid";
 import { EmptyState, QueryError } from "../src/components/Page";
 import { PatientBookPage } from "../src/pages/patient/BookPage";
+import { PatientDoctorsPage } from "../src/pages/patient/DoctorsPage";
 import { ApiRequestError } from "../src/lib/api";
 import type { PublicUser } from "../src/lib/types";
 
@@ -88,6 +89,44 @@ describe("protected routes", () => {
   it("renders the patient portal for a patient", () => {
     renderProtected("PATIENT");
     expect(screen.getByText("Patient home")).toBeInTheDocument();
+  });
+});
+
+describe("patient doctor directory", () => {
+  afterEach(() => {
+    authState.user = null;
+    apiGet.mockReset();
+  });
+
+  it("renders all six demo doctors returned by the patient directory", async () => {
+    authState.user = patient;
+    authState.loading = false;
+    apiGet.mockImplementation(async (path: string) => {
+      if (path !== "/api/patient/doctors") return [];
+      return [
+        { id: "1", name: "Ananya Sharma", specialization: "Cardiology", bio: null, slotDurationMin: 30, yearsExperience: 12, isDemo: true, workingHours: [{ weekday: 1, startTime: "09:00", endTime: "17:00" }] },
+        { id: "2", name: "Rohan Mehta", specialization: "Dermatology", bio: null, slotDurationMin: 20, yearsExperience: 8, isDemo: true, workingHours: [{ weekday: 1, startTime: "09:00", endTime: "17:00" }] },
+        { id: "3", name: "Priya Nair", specialization: "General Practice", bio: null, slotDurationMin: 30, yearsExperience: 10, isDemo: true, workingHours: [{ weekday: 1, startTime: "09:00", endTime: "17:00" }] },
+        { id: "4", name: "Vikram Joshi", specialization: "Pediatrics", bio: null, slotDurationMin: 30, yearsExperience: 9, isDemo: true, workingHours: [{ weekday: 1, startTime: "09:00", endTime: "17:00" }] },
+        { id: "5", name: "Sara Khan", specialization: "Orthopedics", bio: null, slotDurationMin: 30, yearsExperience: 11, isDemo: true, workingHours: [{ weekday: 1, startTime: "09:00", endTime: "17:00" }] },
+        { id: "6", name: "Dev Patel", specialization: "Neurology", bio: null, slotDurationMin: 30, yearsExperience: 14, isDemo: true, workingHours: [{ weekday: 1, startTime: "09:00", endTime: "17:00" }] },
+      ];
+    });
+
+    render(
+      <MemoryRouter>
+        <PatientDoctorsPage />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Ananya Sharma")).toBeInTheDocument();
+    expect(screen.getByText("Rohan Mehta")).toBeInTheDocument();
+    expect(screen.getByText("Priya Nair")).toBeInTheDocument();
+    expect(screen.getByText("Vikram Joshi")).toBeInTheDocument();
+    expect(screen.getByText("Sara Khan")).toBeInTheDocument();
+    expect(screen.getByText("Dev Patel")).toBeInTheDocument();
+    expect(screen.getAllByText(/Cardiology/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Neurology/).length).toBeGreaterThan(0);
   });
 });
 

@@ -17,6 +17,8 @@
     "vercel-build": "prisma generate && tsx scripts/vercel-build.ts && tsc -p tsconfig.build.json",
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:production-demo": "tsx scripts/seed-production-demo.ts",
+    "db:seed:production-admin": "tsx scripts/seed-production-admin.ts",
     "db:reset": "prisma migrate reset --force",
     "db:local": "tsx scripts/start-local-db.ts",
     "postinstall": "prisma generate"

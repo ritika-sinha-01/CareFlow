@@ -4,6 +4,8 @@ import { AppointmentCard } from "@/components/AppointmentCard";
 import { CalendarParticipants } from "@/components/CalendarParticipants";
 import { AppointmentStatusBadge, CalendarStatusBadge } from "@/components/DomainBadges";
 import { EmptyState, PageHeader, QueryError, SkeletonBlock } from "@/components/Page";
+import { aiStatusCopy, NotificationStatusList, postVisitStatusCopy } from "@/components/SideEffectStatus";
+import { StatusBadge } from "@/components/StatusBadge";
 import { SlotGrid } from "@/components/SlotGrid";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,8 +120,48 @@ export function PatientAppointmentDetailPage() {
         <AppointmentStatusBadge status={data.status} />
         <CalendarStatusBadge status={data.calendarSyncStatus} />
       </div>
+      {data.status === "BOOKED" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Appointment confirmed</CardTitle>
+            <CardDescription>
+              This visit is stored in the clinic database. Email, AI briefing, and Google Calendar are optional and
+              shown below. They never cancel a confirmed booking.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : null}
       {actionError ? <QueryError message={actionError} /> : null}
       <CalendarParticipants participants={data.calendarParticipants} />
+      {data.ai ? (
+        <Card>
+          <CardHeader className="flex-row items-start justify-between space-y-0">
+            <div>
+              <CardTitle className="text-base">Pre-visit briefing</CardTitle>
+              <CardDescription>{data.ai.disclaimer}</CardDescription>
+            </div>
+            <StatusBadge
+              label={data.ai.status === "FAILED" ? "Unavailable" : data.ai.status}
+              tone={
+                data.ai.status === "READY"
+                  ? "success"
+                  : data.ai.status === "FAILED"
+                    ? "warning"
+                    : "info"
+              }
+            />
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm leading-relaxed">{aiStatusCopy(data.ai.status, data.ai.error, "patient")}</p>
+            {data.ai.status === "FAILED" || data.ai.status === "IDLE" ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                OpenAI is optional. Your symptoms stay on the appointment either way.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+      <NotificationStatusList items={data.notifications} />
 
       {canCancel || canReschedule ? (
         <div className="flex flex-wrap gap-2">
@@ -226,6 +268,18 @@ export function PatientAppointmentDetailPage() {
                 ))}
               </ul>
             ) : null}
+          </CardContent>
+        </Card>
+      ) : data.postVisit && data.postVisit.status !== "IDLE" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">After your visit</CardTitle>
+            <CardDescription>{data.postVisit.disclaimer}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm leading-relaxed">
+              {postVisitStatusCopy(data.postVisit.status, data.postVisit.error)}
+            </p>
           </CardContent>
         </Card>
       ) : null}

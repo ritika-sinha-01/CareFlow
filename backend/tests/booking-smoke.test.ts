@@ -90,6 +90,12 @@ describe("end-to-end booking smoke", () => {
     expect(patientView.status).toBe(200);
     expect(patientView.body.data.status).toBe("BOOKED");
     expect(patientView.body.data.symptoms).toContain("headache");
+    expect(patientView.body.data.ai).toBeDefined();
+    expect(patientView.body.data.ai.suggestedQuestions).toBeUndefined();
+    expect(["PENDING", "FAILED", "READY", "RETRYING"]).toContain(patientView.body.data.ai.status);
+    expect(patientView.body.data.notifications.some((item: { type: string }) => item.type === "BOOKING_CONFIRMATION")).toBe(
+      true,
+    );
 
     const doctorView = await request(app)
       .get(`/api/doctor/appointments/${confirmed.body.data.id}`)

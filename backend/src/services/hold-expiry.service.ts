@@ -1,21 +1,67 @@
-import { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
 import { recordSystemEvent } from "./system-event.service.js";
+import { assertTransition } from "./appointment-state.js";
 
-export async function expireStaleHolds(now = new Date()): Promise<number> {
-  const expired = await prisma.appointment.findMany({
+export async function expireSlotHoldInTx(
+  tx: Prisma.TransactionClient,
+  doctorId: string,
+  occupancyKey: string,
+  now = new Date(),
+): Promise<number> {
+  const expired = await tx.appointment.findMany({
     where: {
+      doctorId,
+      occupancyKey,
       status: AppointmentStatus.HELD,
       holdExpiresAt: { lte: now },
     },
     select: { id: true },
   });
-
   if (expired.length === 0) return 0;
 
-  await prisma.$transaction(async (tx) => {
+  for (const row of expired) {
+    assertTransition("HELD", "EXPIRED");
+    await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${row.id} FOR UPDATE`;
+  }
+
+  await tx.appointment.updateMany({
+    where: { id: { in: expired.map((row) => row.id) }, status: AppointmentStatus.HELD },
+    data: {
+      status: AppointmentStatus.EXPIRED,
+      occupancyKey: null,
+      cancelledAt: now,
+      cancelReason: "EXPIRED_HOLD",
+    },
+  });
+  await tx.appointmentTimelineEvent.createMany({
+    data: expired.map((row) => ({
+      appointmentId: row.id,
+      code: "SLOT_EXPIRED",
+      label: "Hold expired — slot released",
+      occurredAt: now,
+    })),
+  });
+  return expired.length;
+}
+
+export async function expireStaleHolds(now = new Date()): Promise<number> {
+  const expired = await prisma.$transaction(async (tx) => {
+    const rows = await tx.appointment.findMany({
+      where: {
+        status: AppointmentStatus.HELD,
+        holdExpiresAt: { lte: now },
+      },
+      select: { id: true },
+    });
+    if (rows.length === 0) return [] as Array<{ id: string }>;
+
+    for (const row of rows) {
+      await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${row.id} FOR UPDATE`;
+    }
+
     await tx.appointment.updateMany({
-      where: { id: { in: expired.map((row) => row.id) } },
+      where: { id: { in: rows.map((row) => row.id) }, status: AppointmentStatus.HELD },
       data: {
         status: AppointmentStatus.EXPIRED,
         occupancyKey: null,
@@ -23,15 +69,15 @@ export async function expireStaleHolds(now = new Date()): Promise<number> {
         cancelReason: "EXPIRED_HOLD",
       },
     });
-
     await tx.appointmentTimelineEvent.createMany({
-      data: expired.map((row) => ({
+      data: rows.map((row) => ({
         appointmentId: row.id,
-        code: "CANCELLED",
+        code: "SLOT_EXPIRED" as const,
         label: "Hold expired — slot released",
         occurredAt: now,
       })),
     });
+    return rows;
   });
 
   for (const row of expired) {

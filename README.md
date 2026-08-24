@@ -18,10 +18,12 @@ Working now:
 - Concurrent holds: one success, the rest `SLOT_UNAVAILABLE`
 - Leave: overlapping visits can be cancelled and released; the doctor stays unbookable on leave dates
 - Optional AI pre-visit briefing and post-visit patient summary
-- Optional email (Resend or SMTP) and Google Calendar sync — booking stays valid if they fail
+- Optional email (Resend or SMTP) and Google Calendar sync for **patient and doctor** — booking stays valid if they fail
 - Consultation notes, prescriptions, medication reminders, and visit completion
 - Admin system health: DATABASE, APPOINTMENT_ENGINE, AI_SERVICE, EMAIL_SERVICE, BACKGROUND_WORKER, GOOGLE_CALENDAR (`optional: true` for calendar)
-- Demo failure simulation (admin-only, disabled in production unless explicitly gated)
+- Demo failure simulation flags live in PostgreSQL so the worker sees the same state as the API (admin-only, `DEMO_MODE=true`, disabled in production)
+- Clinic working hours and leave use `CLINIC_TIMEZONE` (default `Asia/Kolkata`); appointments are stored in UTC
+- Appointment reminders queued on confirm; cancel/reschedule invalidate or update them
 
 ## Local setup
 
@@ -65,26 +67,41 @@ Other seeded patients: `meera.iyer@careflow.demo`, `kabir.das@careflow.demo`. Ot
 1. Open the landing page and confirm live system health.
 2. Sign in as Aarav (`aarav.gupta@careflow.demo`) and book a weekday slot — the hold counts down for five minutes.
 3. Sign in as Dr. Sharma (`ananya.sharma@careflow.demo`) and open the visit: briefing, notes, prescription, complete visit.
-4. Sign in as admin and inspect health, leave, notifications, and (if enabled) demo simulation flags.
+4. Sign in as admin and inspect health, leave, notifications, and demo simulation flags.
+
+Step-by-step reviewer script: [docs/demo-guide.md](docs/demo-guide.md).
+
+## Documentation
+
+- [System design](docs/system-design.md)
+- [API](docs/api.md)
+- [Database schema](docs/database-schema.md)
+- [AI prompts](docs/ai-prompts.md)
+- [Google Calendar setup](docs/google-calendar-setup.md)
+- [Demo guide](docs/demo-guide.md) — 13 reviewer steps
 
 ## Environment variables
 
-See `.env.example`. Calendar and AI keys are optional. `ENABLE_DEMO_SIMULATION` is ignored when `APP_ENV` or `NODE_ENV` is `production`.
+See `.env.example`. Calendar and AI keys are optional. Simulation requires `DEMO_MODE=true` or `ENABLE_DEMO_SIMULATION=true` and is ignored when `APP_ENV` or `NODE_ENV` is `production`. `CLINIC_TIMEZONE` is validated at startup.
 
-Email: Resend or SMTP via Nodemailer. Google Calendar OAuth is optional; without credentials, connect returns `{ configured: false, url: null }` and bookings stay valid.
+Email: Resend, SMTP, or `EMAIL_PROVIDER=test` (automated tests). Google Calendar OAuth is optional for patients and doctors; without credentials, connect returns `{ configured: false, url: null }` and bookings stay valid. Refresh tokens stay on the server.
+
+Copy `VITE_CLINIC_TIMEZONE=Asia/Kolkata` into `frontend/.env` if you want the UI timezone explicit; it already defaults to Kolkata.
 
 ## Architecture
 
 - `frontend/` — Vite, React, TypeScript, Tailwind, shared UI primitives
 - `backend/` — Express services, Prisma, PostgreSQL-backed worker (no Redis/Kafka)
 - Appointments use unique `(doctor_id, occupancy_key)` where `occupancy_key = startAt.toISOString()` for HELD/BOOKED/BLOCKED, and `null` when cancelled or expired
-- System events include booking, hold, AI, email, calendar, leave, cancel, and reschedule
-- Health checks inspect the database, occupancy index, worker heartbeat, and whether AI/email/calendar credentials exist
+- Demo simulation, jobs, and notifications are Postgres rows shared by API and worker
+- Health checks inspect the database, occupancy index, worker heartbeat, and whether AI/email/calendar credentials exist. They do not probe live OpenAI/Google/SMTP.
 
 ## Testing
 
 ```bash
-npm test
+npm test                 # backend + frontend
+npx prisma validate      # from backend/
+npm run db:migrate
 ```
 
-Tests cover the API envelope, occupancy keys, concurrent holds, isolation, consultation notes/prescriptions, health rollup, and simulation gating. Unique-constraint logs during concurrent-hold tests are expected.
+Backend tests cover occupancy, concurrent holds, isolation, AI/email/calendar failure isolation, worker-visible demo flags, clinic timezone slots, appointment reminders, and an end-to-end booking smoke path. Frontend tests cover route guards, hold countdown from `holdExpiresAt`, expired holds, `SLOT_UNAVAILABLE`, and confirm. Unique-constraint logs during concurrent-hold tests are expected.

@@ -42,6 +42,101 @@ const postVisitSchema = z.object({
 
 type Briefing = z.infer<typeof briefingSchema>;
 
+export type AiAdapterName = "openai" | "mock" | "unconfigured";
+
+export interface AiCompletionAdapter {
+  name: AiAdapterName;
+  configured: boolean;
+  completeJson(input: { system: string; user: string }): Promise<string>;
+}
+
+export class UnconfiguredAiAdapter implements AiCompletionAdapter {
+  name = "unconfigured" as const;
+  configured = false;
+
+  async completeJson(): Promise<string> {
+    throw new Error("AI provider is not configured.");
+  }
+}
+
+export class MockAiAdapter implements AiCompletionAdapter {
+  name = "mock" as const;
+  configured = true;
+
+  async completeJson(input: { system: string; user: string }): Promise<string> {
+    if (input.system.includes("pre-visit briefing")) {
+      return JSON.stringify({
+        urgency: "LOW",
+        chiefComplaint: "Patient-reported symptoms for clinician review",
+        keySymptoms: ["As described by the patient"],
+        suggestedQuestions: ["How long have these symptoms lasted?"],
+      });
+    }
+    return JSON.stringify({
+      patientSummary: "This is a mock visit summary for tests. It is not a diagnosis.",
+      followUpSteps: ["Follow the clinician's written plan"],
+      medicationSchedule: [],
+    });
+  }
+}
+
+export class OpenAiAdapter implements AiCompletionAdapter {
+  name = "openai" as const;
+  configured = true;
+
+  constructor(private readonly apiKey: string) {}
+
+  async completeJson(input: { system: string; user: string }): Promise<string> {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: env.OPENAI_MODEL,
+        temperature: 0.2,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: input.system },
+          { role: "user", content: input.user },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("AI provider rejected the request.");
+    }
+
+    const body = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = body.choices?.[0]?.message?.content;
+    if (!content) throw new Error("AI provider returned an empty briefing.");
+    return content;
+  }
+}
+
+export function createAiAdapter(): AiCompletionAdapter {
+  if (env.AI_PROVIDER === "mock") return new MockAiAdapter();
+  if (env.OPENAI_API_KEY) return new OpenAiAdapter(env.OPENAI_API_KEY);
+  return new UnconfiguredAiAdapter();
+}
+
+let aiAdapter: AiCompletionAdapter = createAiAdapter();
+
+export function getAiAdapter(): AiCompletionAdapter {
+  return aiAdapter;
+}
+
+export function setAiAdapter(adapter: AiCompletionAdapter): void {
+  aiAdapter = adapter;
+}
+
+export function getAiConfigurationState(): { configured: boolean; provider: AiAdapterName } {
+  return { configured: aiAdapter.configured, provider: aiAdapter.name };
+}
+
 export async function generatePreVisitBriefing(appointmentId: string): Promise<void> {
   const appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId },
@@ -77,21 +172,28 @@ export async function generatePreVisitBriefing(appointmentId: string): Promise<v
     }
   };
 
-  if (shouldSimulate("AI")) {
-    await fail("Simulated AI failure. Original symptoms were preserved.", false);
+  if (await shouldSimulate("AI")) {
+    await fail("Simulated AI failure. Original symptoms were preserved.", true);
     return;
   }
 
-  if (!env.OPENAI_API_KEY) {
+  if (!aiAdapter.configured) {
     await fail("Visit briefing is unavailable. Original symptoms were preserved.", false);
     return;
   }
 
   try {
-    const briefing = await requestBriefing({
-      symptoms: appointment.symptoms ?? "No symptoms were provided.",
-      specialization: appointment.doctor.specialization,
+    const content = await aiAdapter.completeJson({
+      system: SYSTEM_PROMPT,
+      user: `Clinician specialization: ${appointment.doctor.specialization}\nPatient-reported symptoms:\n${appointment.symptoms ?? "No symptoms were provided."}`,
     });
+    const parsed = briefingSchema.safeParse(JSON.parse(content));
+    if (!parsed.success) throw new Error("AI provider returned an invalid briefing.");
+    const briefing: Briefing = {
+      ...parsed.data,
+      keySymptoms: asStringArray(parsed.data.keySymptoms).slice(0, 8),
+      suggestedQuestions: asStringArray(parsed.data.suggestedQuestions).slice(0, 8),
+    };
 
     await prisma.appointment.update({
       where: { id: appointment.id },
@@ -143,52 +245,12 @@ export async function queuePreVisitRetry(appointmentId: string): Promise<void> {
   });
 }
 
-async function requestBriefing(input: { symptoms: string; specialization: string }): Promise<Briefing> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env.OPENAI_MODEL,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: `Clinician specialization: ${input.specialization}\nPatient-reported symptoms:\n${input.symptoms}`,
-        },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("AI provider rejected the request.");
-  }
-
-  const body = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = body.choices?.[0]?.message?.content;
-  if (!content) throw new Error("AI provider returned an empty briefing.");
-
-  const parsed = briefingSchema.safeParse(JSON.parse(content));
-  if (!parsed.success) throw new Error("AI provider returned an invalid briefing.");
-  return {
-    ...parsed.data,
-    keySymptoms: asStringArray(parsed.data.keySymptoms).slice(0, 8),
-    suggestedQuestions: asStringArray(parsed.data.suggestedQuestions).slice(0, 8),
-  };
-}
-
 export async function generatePostVisitSummary(appointmentId: string): Promise<void> {
   const appointment = await prisma.appointment.findUnique({
     where: { id: appointmentId },
     include: { doctor: true, patient: true, prescriptions: true },
   });
-  if (!appointment || appointment.status !== "BOOKED" || !appointment.clinicalNotes) return;
+  if (!appointment || (appointment.status !== "BOOKED" && appointment.status !== "COMPLETED") || !appointment.clinicalNotes) return;
 
   const fail = async (message: string, retryable: boolean) => {
     await prisma.appointment.update({
@@ -207,18 +269,18 @@ export async function generatePostVisitSummary(appointmentId: string): Promise<v
     if (retryable) throw new Error(message);
   };
 
-  if (shouldSimulate("AI")) {
-    await fail("Simulated AI failure. The visit notes were preserved.", false);
+  if (await shouldSimulate("AI")) {
+    await fail("Simulated AI failure. The visit notes were preserved.", true);
     return;
   }
 
-  if (!env.OPENAI_API_KEY) {
+  if (!aiAdapter.configured) {
     await fail("A patient summary is unavailable. Your clinician's notes and prescriptions still stand.", false);
     return;
   }
 
   try {
-    const content = await completeJson({
+    const content = await aiAdapter.completeJson({
       system: POST_VISIT_PROMPT,
       user: [
         `Clinician notes:\n${appointment.clinicalNotes}`,
@@ -269,28 +331,7 @@ export async function generatePostVisitSummary(appointmentId: string): Promise<v
   }
 }
 
-async function completeJson(input: { system: string; user: string }): Promise<string> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: env.OPENAI_MODEL,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: input.system },
-        { role: "user", content: input.user },
-      ],
-    }),
-  });
-  if (!response.ok) throw new Error("AI provider rejected the request.");
-  const body = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = body.choices?.[0]?.message?.content;
-  if (!content) throw new Error("AI provider returned an empty briefing.");
-  return content;
-}
+export const aiPrompts = {
+  preVisit: SYSTEM_PROMPT,
+  postVisit: POST_VISIT_PROMPT,
+};

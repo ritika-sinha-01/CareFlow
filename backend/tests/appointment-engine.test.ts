@@ -6,26 +6,17 @@ import { prisma } from "../src/db/prisma.js";
 import { expireStaleHolds } from "../src/services/hold-expiry.service.js";
 import { generateSlotStarts } from "../src/services/slot.service.js";
 import { resetSimulationFlags, setSimulationFlag } from "../src/services/demo-simulation.service.js";
+import { nextClinicMonday } from "./helpers.js";
 
 const app = createApp();
 const password = "CareFlow!demo1";
 
-function nextMonday(hour: number, minute: number) {
-  const date = new Date();
-  const daysUntilMonday = (1 + 7 - date.getDay()) % 7 || 7;
-  date.setDate(date.getDate() + daysUntilMonday);
-  date.setHours(hour, minute, 0, 0);
-  if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 7);
-  return date;
-}
-
 describe("slot generation", () => {
-  it("builds 30-minute slots inside working hours", () => {
+  it("builds 30-minute slots inside clinic-timezone working hours", () => {
     const starts = generateSlotStarts("2026-08-24", "09:00", "11:00", 30);
     expect(starts).toHaveLength(4);
-    expect(starts[0]?.getHours()).toBe(9);
-    expect(starts[3]?.getHours()).toBe(10);
-    expect(starts[3]?.getMinutes()).toBe(30);
+    expect(starts[0]?.toISOString()).toBe("2026-08-24T03:30:00.000Z");
+    expect(starts[3]?.toISOString()).toBe("2026-08-24T05:00:00.000Z");
   });
 });
 
@@ -33,8 +24,8 @@ describe("appointment engine", () => {
   let doctorId = "";
   let patientA = "";
   let patientB = "";
-  const slot = nextMonday(10, 0);
-  const laterSlot = nextMonday(10, 30);
+  const slot = nextClinicMonday("10:00");
+  const laterSlot = nextClinicMonday("10:30");
 
   beforeAll(async () => {
     const passwordHash = await bcrypt.hash(password, 4);
@@ -80,7 +71,7 @@ describe("appointment engine", () => {
   });
 
   afterAll(async () => {
-    resetSimulationFlags();
+    await resetSimulationFlags();
     if (doctorId) {
       await prisma.appointment.deleteMany({ where: { doctorId } });
       await prisma.doctorLeave.deleteMany({ where: { doctorId } });
@@ -126,7 +117,7 @@ describe("appointment engine", () => {
       .set("Authorization", `Bearer ${patientA}`)
       .send({ doctorId, startAt: slot.toISOString() });
     expect(response.status).toBe(409);
-    expect(response.body.error.code).toBe("DOCTOR_UNAVAILABLE");
+    expect(response.body.error.code).toBe("DOCTOR_ON_LEAVE");
     await prisma.doctorLeave.deleteMany({ where: { doctorId } });
   });
 
@@ -217,7 +208,7 @@ describe("appointment engine", () => {
   });
 
   it("keeps the original visit when reschedule hits a taken slot", async () => {
-    const blocked = nextMonday(11, 0);
+    const blocked = nextClinicMonday("11:00");
     const blocker = await request(app)
       .post("/api/patient/holds")
       .set("Authorization", `Bearer ${patientB}`)
@@ -261,13 +252,121 @@ describe("appointment engine", () => {
   });
 
   it("does not book when booking-conflict simulation is on", async () => {
-    setSimulationFlag("BOOKING_CONFLICT", true);
+    await setSimulationFlag("BOOKING_CONFLICT", true);
     const response = await request(app)
       .post("/api/patient/holds")
       .set("Authorization", `Bearer ${patientA}`)
       .send({ doctorId, startAt: slot.toISOString() });
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe("SLOT_UNAVAILABLE");
-    resetSimulationFlags();
+    await resetSimulationFlags();
+  });
+
+  it("blocks confirmation of an expired hold without trusting the worker", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(held.status).toBe(201);
+
+    await prisma.appointment.update({
+      where: { id: held.body.data.id },
+      data: { holdExpiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const confirm = await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/confirm`)
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ symptoms: "Trying to confirm after the hold already expired." });
+    expect(confirm.status).toBe(409);
+    expect(confirm.body.error.code).toBe("HOLD_EXPIRED");
+
+    const retry = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientB}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(retry.status).toBe(201);
+    await request(app)
+      .post(`/api/patient/appointments/${retry.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientB}`);
+  });
+
+  it("rejects confirming another patient's hold", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(held.status).toBe(201);
+
+    const stolen = await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/confirm`)
+      .set("Authorization", `Bearer ${patientB}`)
+      .send({ symptoms: "This hold is not mine to confirm." });
+    expect(stolen.status).toBe(409);
+    expect(stolen.body.error.code).toBe("HOLD_NOT_OWNED");
+
+    await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientA}`);
+  });
+
+  it("hides another patient's appointment by id", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    const confirmed = await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/confirm`)
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ symptoms: "Visit used to prove patient isolation." });
+    expect(confirmed.status).toBe(200);
+
+    const hidden = await request(app)
+      .get(`/api/patient/appointments/${confirmed.body.data.id}`)
+      .set("Authorization", `Bearer ${patientB}`);
+    expect(hidden.status).toBe(404);
+    expect(hidden.body.error.code).toBe("APPOINTMENT_NOT_FOUND");
+
+    await request(app)
+      .post(`/api/patient/appointments/${confirmed.body.data.id}/cancel`)
+      .set("Authorization", `Bearer ${patientA}`);
+  });
+
+  it("rejects confirming a cancelled hold", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientA}`);
+
+    const confirm = await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/confirm`)
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ symptoms: "Cannot confirm after releasing this hold." });
+    expect(confirm.status).toBe(409);
+    expect(["HOLD_NOT_OWNED", "INVALID_APPOINTMENT_STATE"]).toContain(confirm.body.error.code);
+  });
+
+  it("treats hold-expired simulation as a failed confirm, not a booked visit", async () => {
+    const held = await request(app)
+      .post("/api/patient/holds")
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ doctorId, startAt: slot.toISOString() });
+    expect(held.status).toBe(201);
+    await setSimulationFlag("HOLD_EXPIRED", true);
+    const confirm = await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/confirm`)
+      .set("Authorization", `Bearer ${patientA}`)
+      .send({ symptoms: "Simulation should block confirmation only." });
+    expect(confirm.status).toBe(409);
+    expect(confirm.body.error.code).toBe("HOLD_EXPIRED");
+    await resetSimulationFlags();
+    const row = await prisma.appointment.findUniqueOrThrow({ where: { id: held.body.data.id } });
+    expect(row.status).toBe("HELD");
+    await request(app)
+      .post(`/api/patient/appointments/${held.body.data.id}/release`)
+      .set("Authorization", `Bearer ${patientA}`);
   });
 });

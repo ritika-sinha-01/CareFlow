@@ -12,6 +12,7 @@ import {
   adminResolveLeaveController,
   adminNotificationsController,
   appointmentByIdController,
+  cancelAppointmentController,
 } from "../controllers/portal.controller.js";
 
 export const adminRouter = Router();
@@ -23,6 +24,7 @@ adminRouter.post("/doctors", asyncHandler(adminCreateDoctorController));
 adminRouter.get("/doctors/:id", asyncHandler(adminDoctorController));
 adminRouter.get("/appointments", asyncHandler(adminAppointmentsController));
 adminRouter.get("/appointments/:id", asyncHandler(appointmentByIdController));
+adminRouter.post("/appointments/:id/cancel", asyncHandler(cancelAppointmentController));
 adminRouter.get("/leave", asyncHandler(adminLeaveController));
 adminRouter.post("/leave", asyncHandler(adminCreateLeaveController));
 adminRouter.post("/leave/:id/resolve", asyncHandler(adminResolveLeaveController));

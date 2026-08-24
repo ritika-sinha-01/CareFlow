@@ -91,7 +91,7 @@ function slotCaption(slot: PublicSlot): string {
   if (slot.state === "AVAILABLE") return "Available";
   if (slot.state === "BOOKED") return "Booked";
   if (slot.state === "HELD_BY_YOU") {
-    return slot.remainingSeconds != null ? `Held · ${formatRemaining(slot.remainingSeconds)}` : "Held by you";
+    return slot.remainingSeconds != null ? `Reserved for you · ${formatRemaining(slot.remainingSeconds)}` : "Slot reserved for you";
   }
   if (slot.state === "HELD") {
     return slot.remainingSeconds != null ? `Held · ${formatRemaining(slot.remainingSeconds)}` : "Held";

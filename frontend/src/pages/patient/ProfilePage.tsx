@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { CalendarConnectionCard } from "@/components/CalendarConnectionCard";
 import { PageHeader, QueryError, SkeletonBlock } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,6 +45,11 @@ export function PatientProfilePage() {
     <div>
       <PageHeader title="Profile" description={user.isDemo ? "Demo patient account." : "Your contact details."} />
       {error ? <QueryError message={error} /> : null}
+      <CalendarConnectionCard
+        connectPath="/api/patient/calendar/connect"
+        disconnectPath="/api/patient/calendar/disconnect"
+        statusPath="/api/patient/calendar/status"
+      />
       <form className="max-w-md space-y-4" onSubmit={onSubmit}>
         <div className="space-y-2">
           <Label htmlFor="firstName">First name</Label>

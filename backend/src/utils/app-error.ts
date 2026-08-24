@@ -19,6 +19,8 @@ export const Errors = {
     new AppError(403, "FORBIDDEN", "You do not have access to this resource."),
   notFound: (message = "The requested resource was not found.") =>
     new AppError(404, "NOT_FOUND", message),
+  appointmentNotFound: () =>
+    new AppError(404, "APPOINTMENT_NOT_FOUND", "This appointment is not available."),
   slotUnavailable: () =>
     new AppError(
       409,
@@ -31,10 +33,20 @@ export const Errors = {
       "HOLD_EXPIRED",
       "Your reservation expired. Please choose a time again.",
     ),
+  holdNotOwned: () =>
+    new AppError(409, "HOLD_NOT_OWNED", "This reservation belongs to another patient."),
+  invalidAppointmentState: () =>
+    new AppError(
+      409,
+      "INVALID_APPOINTMENT_STATE",
+      "This appointment cannot move to that state.",
+    ),
+  unauthorizedAppointmentAction: () =>
+    new AppError(403, "UNAUTHORIZED_APPOINTMENT_ACTION", "You cannot change this appointment."),
   notCancellable: () =>
     new AppError(
       409,
-      "NOT_CANCELLABLE",
+      "INVALID_APPOINTMENT_STATE",
       "This appointment can no longer be changed.",
     ),
   doctorUnavailable: () =>
@@ -43,6 +55,8 @@ export const Errors = {
       "DOCTOR_UNAVAILABLE",
       "The clinician is not available at this time.",
     ),
+  doctorOnLeave: () =>
+    new AppError(409, "DOCTOR_ON_LEAVE", "The clinician is on leave on this date."),
   simulationDisabled: () =>
     new AppError(
       403,
@@ -54,4 +68,6 @@ export const Errors = {
   conflict: (message: string) => new AppError(409, "CONFLICT", message),
   invalidCredentials: () =>
     new AppError(401, "INVALID_CREDENTIALS", "Email or password is incorrect."),
+  tooManyRequests: () =>
+    new AppError(429, "RATE_LIMITED", "Too many attempts. Please wait and try again."),
 };

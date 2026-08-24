@@ -1,14 +1,16 @@
 import { prisma } from "../db/prisma.js";
 import { Errors } from "../utils/app-error.js";
-import { addMinutes, combineLocalDateAndTime, isoDate } from "../utils/clinic-time.js";
+import { addCalendarDays, clinicLocalToUtc, isoDate } from "../utils/clinic-time.js";
 import { displayName } from "../utils/serializers.js";
 import { appointmentInclude, serializeAppointment } from "./appointment-serialize.js";
 import { shouldSimulate } from "./demo-simulation.service.js";
 import { recordSystemEvent } from "./system-event.service.js";
+import { cancelAppointmentReminders } from "./appointment-reminder.service.js";
+import { ensureCalendarParticipants } from "./calendar.service.js";
 
 function leaveWindow(startDate: Date, endDate: Date) {
-  const start = combineLocalDateAndTime(isoDate(startDate), "00:00");
-  const end = addMinutes(combineLocalDateAndTime(isoDate(endDate), "23:59"), 1);
+  const start = clinicLocalToUtc(isoDate(startDate), "00:00");
+  const end = clinicLocalToUtc(addCalendarDays(isoDate(endDate), 1), "00:00");
   return { start, end };
 }
 
@@ -71,7 +73,7 @@ export async function createDoctorLeave(input: {
 }
 
 export async function resolveLeaveConflicts(leaveId: string, actorUserId: string) {
-  if (shouldSimulate("LEAVE_CONFLICT")) {
+  if (await shouldSimulate("LEAVE_CONFLICT")) {
     throw Errors.conflict("Leave conflict resolution is simulated as failing. Appointments were not changed.");
   }
 
@@ -98,7 +100,7 @@ export async function resolveLeaveConflicts(leaveId: string, actorUserId: string
       await tx.appointmentTimelineEvent.create({
         data: {
           appointmentId: appointment.id,
-          code: "CANCELLED",
+          code: "APPOINTMENT_CANCELLED",
           label: "Cancelled because the clinician is on leave",
         },
       });
@@ -111,6 +113,8 @@ export async function resolveLeaveConflicts(leaveId: string, actorUserId: string
       entityType: "appointment",
       entityId: appointment.id,
     });
+
+    await cancelAppointmentReminders(appointment.id).catch(() => undefined);
 
     if (appointment.patient) {
       await prisma.notification.create({
@@ -126,6 +130,7 @@ export async function resolveLeaveConflicts(leaveId: string, actorUserId: string
       }).catch(() => undefined);
     }
 
+    await ensureCalendarParticipants(appointment.id).catch(() => undefined);
     await prisma.job.create({
       data: {
         type: "CALENDAR_SYNC",

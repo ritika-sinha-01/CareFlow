@@ -5,30 +5,22 @@ import { createApp } from "../src/app.js";
 import { prisma } from "../src/db/prisma.js";
 import { generatePreVisitBriefing } from "../src/services/ai.service.js";
 import { syncAppointmentCalendar } from "../src/services/calendar.service.js";
-import { processDueJobs } from "../src/services/job.service.js";
 import { resetSimulationFlags, setSimulationFlag } from "../src/services/demo-simulation.service.js";
 import { activeOccupancyKey } from "../src/utils/occupancy-key.js";
+import { clinicDateOf, drainJobs, nextClinicMonday } from "./helpers.js";
 
 const app = createApp();
 const password = "CareFlow!demo1";
-
-function nextMonday(hour: number, minute: number) {
-  const date = new Date();
-  const daysUntilMonday = (1 + 7 - date.getDay()) % 7 || 7;
-  date.setDate(date.getDate() + daysUntilMonday);
-  date.setHours(hour, minute, 0, 0);
-  if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 7);
-  return date;
-}
 
 describe("AI, leave, and calendar reliability", () => {
   let doctorId = "";
   let patientToken = "";
   let adminToken = "";
   let appointmentId = "";
-  const slot = nextMonday(11, 0);
+  const slot = nextClinicMonday("11:00");
 
   beforeAll(async () => {
+    await resetSimulationFlags();
     const passwordHash = await bcrypt.hash(password, 4);
     const suffix = `${Date.now()}`;
     const doctorUser = await prisma.user.create({
@@ -87,7 +79,7 @@ describe("AI, leave, and calendar reliability", () => {
   });
 
   afterAll(async () => {
-    resetSimulationFlags();
+    await resetSimulationFlags();
     if (doctorId) {
       await prisma.appointment.deleteMany({ where: { doctorId } });
       await prisma.doctorLeave.deleteMany({ where: { doctorId } });
@@ -113,7 +105,7 @@ describe("AI, leave, and calendar reliability", () => {
         payload: { appointmentId },
       },
     });
-    await processDueJobs(20);
+    await drainJobs();
     const row = await prisma.appointment.findUniqueOrThrow({ where: { id: appointmentId } });
     expect(row.status).toBe("BOOKED");
     expect(row.aiPreVisitStatus).toBe("FAILED");
@@ -127,7 +119,7 @@ describe("AI, leave, and calendar reliability", () => {
   });
 
   it("records leave overlaps and releases them without deleting history", async () => {
-    const dateStr = `${slot.getFullYear()}-${String(slot.getMonth() + 1).padStart(2, "0")}-${String(slot.getDate()).padStart(2, "0")}`;
+    const dateStr = clinicDateOf(slot);
     const created = await request(app)
       .post("/api/admin/leave")
       .set("Authorization", `Bearer ${adminToken}`)
@@ -155,11 +147,11 @@ describe("AI, leave, and calendar reliability", () => {
       .set("Authorization", `Bearer ${patientToken}`)
       .send({ doctorId, startAt: slot.toISOString() });
     expect(blocked.status).toBe(409);
-    expect(blocked.body.error.code).toBe("DOCTOR_UNAVAILABLE");
+    expect(blocked.body.error.code).toBe("DOCTOR_ON_LEAVE");
   });
 
   it("does not change appointments when leave resolution is simulated as failing", async () => {
-    const later = nextMonday(15, 0);
+    const later = nextClinicMonday("15:00");
     const endAt = new Date(later.getTime() + 30 * 60_000);
     const patient = await prisma.appointment.findFirst({
       where: { id: appointmentId },
@@ -176,19 +168,19 @@ describe("AI, leave, and calendar reliability", () => {
         symptoms: "Follow-up for a previously cancelled throat visit.",
       },
     });
-    const dateStr = `${later.getFullYear()}-${String(later.getMonth() + 1).padStart(2, "0")}-${String(later.getDate()).padStart(2, "0")}`;
+    const dateStr = clinicDateOf(later);
     const created = await request(app)
       .post("/api/admin/leave")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ doctorId, startDate: dateStr, endDate: dateStr, reason: "Simulated" });
-    setSimulationFlag("LEAVE_CONFLICT", true);
+    await setSimulationFlag("LEAVE_CONFLICT", true);
     const failed = await request(app)
       .post(`/api/admin/leave/${created.body.data.id}/resolve`)
       .set("Authorization", `Bearer ${adminToken}`);
     expect(failed.status).toBe(409);
     const still = await prisma.appointment.findUniqueOrThrow({ where: { id: extra.id } });
     expect(still.status).toBe("BOOKED");
-    resetSimulationFlags();
+    await resetSimulationFlags();
     await request(app)
       .post(`/api/admin/leave/${created.body.data.id}/resolve`)
       .set("Authorization", `Bearer ${adminToken}`);

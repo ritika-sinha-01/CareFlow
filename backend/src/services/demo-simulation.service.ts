@@ -1,38 +1,55 @@
 import { env, isDemoSimulationEnabled, isProductionEnv } from "../config/env.js";
+import { prisma } from "../db/prisma.js";
 
-export type SimulationFlag =
-  | "AI"
-  | "EMAIL"
-  | "CALENDAR"
-  | "BOOKING_CONFLICT"
-  | "LEAVE_CONFLICT";
+export const SIMULATION_FLAGS = [
+  "AI",
+  "EMAIL",
+  "CALENDAR",
+  "CALENDAR_DOCTOR",
+  "CALENDAR_PATIENT",
+  "BOOKING_CONFLICT",
+  "LEAVE_CONFLICT",
+  "HOLD_EXPIRED",
+] as const;
 
-const flags = new Set<SimulationFlag>();
+export type SimulationFlag = (typeof SIMULATION_FLAGS)[number];
+
+function isKnownFlag(flag: string): flag is SimulationFlag {
+  return (SIMULATION_FLAGS as readonly string[]).includes(flag);
+}
 
 export function simulationGateOpen(): boolean {
   return isDemoSimulationEnabled(env);
 }
 
-export function listSimulationFlags(): SimulationFlag[] {
-  return [...flags];
+export async function listSimulationFlags(): Promise<SimulationFlag[]> {
+  if (!simulationGateOpen()) return [];
+  const rows = await prisma.demoSimulationFlag.findMany({
+    where: { enabled: true },
+  });
+  return rows.map((row) => row.flag).filter(isKnownFlag);
 }
 
-export function setSimulationFlag(flag: SimulationFlag, enabled: boolean): SimulationFlag[] {
+export async function setSimulationFlag(flag: SimulationFlag, enabled: boolean): Promise<SimulationFlag[]> {
   if (!simulationGateOpen() || isProductionEnv()) {
-    flags.clear();
+    await prisma.demoSimulationFlag.deleteMany();
     return [];
   }
 
-  if (enabled) flags.add(flag);
-  else flags.delete(flag);
+  await prisma.demoSimulationFlag.upsert({
+    where: { flag },
+    create: { flag, enabled },
+    update: { enabled },
+  });
   return listSimulationFlags();
 }
 
-export function shouldSimulate(flag: SimulationFlag): boolean {
+export async function shouldSimulate(flag: SimulationFlag): Promise<boolean> {
   if (!simulationGateOpen()) return false;
-  return flags.has(flag);
+  const row = await prisma.demoSimulationFlag.findUnique({ where: { flag } });
+  return row?.enabled === true;
 }
 
-export function resetSimulationFlags(): void {
-  flags.clear();
+export async function resetSimulationFlags(): Promise<void> {
+  await prisma.demoSimulationFlag.deleteMany();
 }

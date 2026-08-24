@@ -1,22 +1,11 @@
 import { PrismaClient, type Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { activeOccupancyKey } from "../src/utils/occupancy-key.ts";
+import { addCalendarDays, clinicLocalToUtc, toClinicDateInput } from "../src/utils/clinic-time.ts";
 
 const prisma = new PrismaClient();
 
 const DEMO_PASSWORD = "CareFlow!demo1";
-
-function addDays(base: Date, days: number): Date {
-  const next = new Date(base);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function atTime(base: Date, hours: number, minutes = 0): Date {
-  const next = new Date(base);
-  next.setHours(hours, minutes, 0, 0);
-  return next;
-}
 
 function weekdayHours(doctorId: string) {
   return [1, 2, 3, 4, 5].map((weekday) => ({
@@ -37,10 +26,21 @@ async function main() {
   }
 
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
-  const today = new Date();
-  const tomorrow = addDays(today, 1);
-  const yesterday = addDays(today, -1);
-  const nextWeek = addDays(today, 7);
+  const todayStr = toClinicDateInput(new Date());
+  const tomorrowStr = addCalendarDays(todayStr, 1);
+  const yesterdayStr = addCalendarDays(todayStr, -1);
+  const twoDaysStr = addCalendarDays(todayStr, 2);
+
+  const upcomingStart = clinicLocalToUtc(tomorrowStr, "10:00");
+  const upcomingEnd = clinicLocalToUtc(tomorrowStr, "10:30");
+  const pastStart = clinicLocalToUtc(yesterdayStr, "11:00");
+  const pastEnd = clinicLocalToUtc(yesterdayStr, "11:30");
+  const failedAiStart = clinicLocalToUtc(tomorrowStr, "14:00");
+  const failedAiEnd = clinicLocalToUtc(tomorrowStr, "14:30");
+  const holdStart = clinicLocalToUtc(tomorrowStr, "16:00");
+  const holdEnd = clinicLocalToUtc(tomorrowStr, "16:30");
+  const cancelledStart = clinicLocalToUtc(twoDaysStr, "09:00");
+  const cancelledEnd = clinicLocalToUtc(twoDaysStr, "09:30");
 
   const admin = await prisma.user.create({
     data: {
@@ -160,22 +160,11 @@ async function main() {
   await prisma.doctorLeave.create({
     data: {
       doctorId: dermatology.id,
-      startDate: nextWeek,
-      endDate: addDays(nextWeek, 1),
+      startDate: new Date(`${addCalendarDays(todayStr, 7)}T00:00:00.000Z`),
+      endDate: new Date(`${addCalendarDays(todayStr, 8)}T00:00:00.000Z`),
       reason: "Demo leave — conference (no patient impact)",
     },
   });
-
-  const upcomingStart = atTime(tomorrow, 10, 0);
-  const upcomingEnd = atTime(tomorrow, 10, 30);
-  const pastStart = atTime(yesterday, 11, 0);
-  const pastEnd = atTime(yesterday, 11, 30);
-  const failedAiStart = atTime(tomorrow, 14, 0);
-  const failedAiEnd = atTime(tomorrow, 14, 30);
-  const holdStart = atTime(tomorrow, 16, 0);
-  const holdEnd = atTime(tomorrow, 16, 30);
-  const cancelledStart = atTime(addDays(today, 2), 9, 0);
-  const cancelledEnd = atTime(addDays(today, 2), 9, 30);
 
   const upcoming = await prisma.appointment.create({
     data: {
@@ -259,7 +248,7 @@ async function main() {
       patientId: aarav.id,
       medicationName: "Loratadine 10mg",
       scheduleLabel: "Every morning",
-      nextFireAt: atTime(addDays(today, 1), 8, 0),
+      nextFireAt: clinicLocalToUtc(tomorrowStr, "08:00"),
       isActive: true,
     },
   });

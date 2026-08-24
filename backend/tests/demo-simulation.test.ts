@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterAll } from "vitest";
 import {
   listSimulationFlags,
   resetSimulationFlags,
@@ -6,22 +6,32 @@ import {
   shouldSimulate,
   simulationGateOpen,
 } from "../src/services/demo-simulation.service.js";
+import { prisma } from "../src/db/prisma.js";
 
 describe("demo failure simulation", () => {
-  beforeEach(() => {
-    resetSimulationFlags();
+  beforeEach(async () => {
+    await resetSimulationFlags();
   });
 
-  it("is enabled in non-production when the env flag is on", () => {
+  afterAll(async () => {
+    await resetSimulationFlags();
+    await prisma.$disconnect();
+  });
+
+  it("is enabled in non-production when DEMO_MODE is on", () => {
     expect(simulationGateOpen()).toBe(true);
   });
 
-  it("toggles flags in memory", () => {
-    expect(shouldSimulate("AI")).toBe(false);
-    setSimulationFlag("AI", true);
-    expect(shouldSimulate("AI")).toBe(true);
-    expect(listSimulationFlags()).toEqual(["AI"]);
-    setSimulationFlag("AI", false);
-    expect(shouldSimulate("AI")).toBe(false);
+  it("persists flags in postgres so another process can read them", async () => {
+    expect(await shouldSimulate("AI")).toBe(false);
+    await setSimulationFlag("AI", true);
+    expect(await shouldSimulate("AI")).toBe(true);
+    expect(await listSimulationFlags()).toEqual(["AI"]);
+
+    const row = await prisma.demoSimulationFlag.findUniqueOrThrow({ where: { flag: "AI" } });
+    expect(row.enabled).toBe(true);
+
+    await setSimulationFlag("AI", false);
+    expect(await shouldSimulate("AI")).toBe(false);
   });
 });

@@ -3,6 +3,8 @@ import { prisma } from "../db/prisma.js";
 import { Errors } from "../utils/app-error.js";
 import { requireDoctorRecord } from "./appointment-access.service.js";
 import { appointmentInclude, serializeAppointment } from "./appointment-serialize.js";
+import { clinicLocalToUtc, addCalendarDays, toClinicDateInput } from "../utils/clinic-time.js";
+import { assertTransition } from "./appointment-state.js";
 
 async function loadOwnedBooked(user: AuthUser, appointmentId: string) {
   const doctor = await requireDoctorRecord(user.id);
@@ -11,10 +13,10 @@ async function loadOwnedBooked(user: AuthUser, appointmentId: string) {
     include: appointmentInclude,
   });
   if (!appointment || appointment.doctorId !== doctor.id) {
-    throw Errors.notFound("This appointment is not available.");
+    throw Errors.appointmentNotFound();
   }
   if (appointment.status !== "BOOKED") {
-    throw Errors.conflict("This visit can no longer be updated.");
+    throw Errors.invalidAppointmentState();
   }
   return appointment;
 }
@@ -24,7 +26,7 @@ async function serialized(id: string, audience: "doctor") {
     where: { id },
     include: appointmentInclude,
   });
-  if (!appointment) throw Errors.notFound("This appointment is not available.");
+  if (!appointment) throw Errors.appointmentNotFound();
   return serializeAppointment(appointment, audience);
 }
 
@@ -107,9 +109,11 @@ export async function completeConsultation(user: AuthUser, appointmentId: string
     throw Errors.validation("Record clinical notes before sending a patient summary.");
   }
 
+  assertTransition(appointment.status, "COMPLETED");
   await prisma.appointment.update({
     where: { id: appointment.id },
     data: {
+      status: "COMPLETED",
       aiPostVisitStatus: "PENDING",
       aiPostVisitError: null,
     },
@@ -137,8 +141,6 @@ export async function completeConsultation(user: AuthUser, appointmentId: string
 }
 
 function nextMorning(from = new Date()) {
-  const next = new Date(from);
-  next.setDate(next.getDate() + 1);
-  next.setHours(8, 0, 0, 0);
-  return next;
+  const tomorrow = addCalendarDays(toClinicDateInput(from), 1);
+  return clinicLocalToUtc(tomorrow, "08:00");
 }

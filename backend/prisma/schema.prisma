@@ -23,6 +23,7 @@ enum AppointmentStatus {
   CANCELLED
   EXPIRED
   BLOCKED
+  COMPLETED
 }
 
 enum CancelReason {
@@ -98,7 +99,11 @@ enum JobStatus {
 
 enum TimelineCode {
   SLOT_RESERVED
+  SLOT_HELD
+  SLOT_EXPIRED
   APPOINTMENT_CONFIRMED
+  APPOINTMENT_CANCELLED
+  APPOINTMENT_RESCHEDULED
   AI_SUMMARY_GENERATED
   AI_SUMMARY_FAILED
   EMAIL_SENT
@@ -143,6 +148,12 @@ model User {
   phone        String?
   dateOfBirth  DateTime? @map("date_of_birth") @db.Date
   isDemo       Boolean   @default(false) @map("is_demo")
+
+  /// Server-side only. Never expose refresh tokens in API responses.
+  googleRefreshToken String?  @map("google_refresh_token") @db.Text
+  googleCalendarId   String?  @map("google_calendar_id")
+  calendarConnected  Boolean  @default(false) @map("calendar_connected")
+
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
@@ -151,6 +162,7 @@ model User {
   heldAppointments        Appointment[]           @relation("HeldBy")
   notifications           Notification[]
   medicationReminders     MedicationReminder[]
+  calendarEvents          AppointmentCalendarEvent[] @relation("CalendarEventOwner")
 
   @@index([role])
   @@map("users")
@@ -165,11 +177,6 @@ model Doctor {
   slotDurationMin Int    @default(30) @map("slot_duration_min")
   yearsExperience Int?   @map("years_experience")
   isDemo         Boolean @default(false) @map("is_demo")
-
-  /// Server-side only. Never expose in API responses.
-  googleRefreshToken String?  @map("google_refresh_token") @db.Text
-  googleCalendarId   String?  @map("google_calendar_id")
-  calendarConnected  Boolean  @default(false) @map("calendar_connected")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -250,7 +257,6 @@ model Appointment {
   medicationSchedule Json?               @map("medication_schedule")
   aiPostVisitError   String?             @map("ai_post_visit_error")
 
-  googleEventId      String?            @map("google_event_id")
   calendarSyncStatus CalendarSyncStatus @default(NOT_CONNECTED) @map("calendar_sync_status")
   calendarSyncError  String?            @map("calendar_sync_error")
 
@@ -266,6 +272,7 @@ model Appointment {
   prescriptions       Prescription[]
   medicationReminders MedicationReminder[]
   notifications       Notification[]
+  calendarEvents      AppointmentCalendarEvent[]
 
   @@unique([doctorId, occupancyKey], map: "appointments_active_slot_key")
   @@index([doctorId, startAt])
@@ -273,6 +280,24 @@ model Appointment {
   @@index([status, holdExpiresAt])
   @@index([status, startAt])
   @@map("appointments")
+}
+
+/// One Google Calendar event per appointment participant (patient and doctor).
+model AppointmentCalendarEvent {
+  id            String             @id @default(cuid())
+  appointmentId String             @map("appointment_id")
+  appointment   Appointment        @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  ownerUserId   String             @map("owner_user_id")
+  owner         User               @relation("CalendarEventOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  googleEventId String?            @map("google_event_id")
+  syncStatus    CalendarSyncStatus @default(NOT_CONNECTED) @map("sync_status")
+  lastError     String?            @map("last_error")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  @@unique([appointmentId, ownerUserId], map: "calendar_events_appointment_owner_key")
+  @@index([ownerUserId, syncStatus])
+  @@map("appointment_calendar_events")
 }
 
 model AppointmentTimelineEvent {
@@ -337,6 +362,7 @@ model Notification {
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
 
+  @@unique([appointmentId, type], map: "notifications_appointment_id_type_key")
   @@index([status, nextAttemptAt])
   @@index([userId, createdAt])
   @@map("notifications")
@@ -384,4 +410,13 @@ model WorkerHeartbeat {
   pid        Int?
 
   @@map("worker_heartbeats")
+}
+
+/// Shared demo failure flags. Read by both API and worker processes.
+model DemoSimulationFlag {
+  flag      String   @id
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("demo_simulation_flags")
 }

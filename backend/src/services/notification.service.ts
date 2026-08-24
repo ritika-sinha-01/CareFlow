@@ -16,10 +16,27 @@ export async function processDueNotifications(limit = 10): Promise<number> {
   });
 
   for (const notification of due) {
-    await prisma.notification.update({
-      where: { id: notification.id },
+    const claimed = await prisma.notification.updateMany({
+      where: { id: notification.id, status: { in: ["QUEUED", "RETRYING"] } },
       data: { status: "PROCESSING" },
     });
+    if (claimed.count === 0) continue;
+
+    if (notification.type === "APPOINTMENT_REMINDER") {
+      const appointment = notification.appointmentId
+        ? await prisma.appointment.findUnique({ where: { id: notification.appointmentId } })
+        : null;
+      if (!appointment || appointment.status !== "BOOKED") {
+        await prisma.notification.update({
+          where: { id: notification.id },
+          data: {
+            status: "FAILED",
+            lastError: "Reminder cancelled because the appointment is no longer booked.",
+          },
+        });
+        continue;
+      }
+    }
 
     try {
       const result = await sendEmail({

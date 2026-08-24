@@ -64,7 +64,7 @@ describe("authorization isolation", () => {
       .get(`/api/patient/appointments/${appointmentId}`)
       .set("Authorization", `Bearer ${meera}`);
     expect(forbidden.status).toBe(404);
-    expect(forbidden.body.error.code).toBe("NOT_FOUND");
+    expect(forbidden.body.error.code).toBe("APPOINTMENT_NOT_FOUND");
   });
 
   it("prevents a doctor from reading another doctor's appointment", async () => {

@@ -9,14 +9,18 @@ import {
   doctorProfileController,
   doctorCalendarConnectController,
   doctorCalendarDisconnectController,
+  doctorCalendarStatusController,
   doctorRetryAiController,
   doctorSaveNotesController,
   doctorIssuePrescriptionController,
   doctorCompleteVisitController,
+  cancelAppointmentController,
 } from "../controllers/portal.controller.js";
+import { googleCalendarCallbackController } from "../controllers/integrations.controller.js";
 
 export const doctorRouter = Router();
 
+doctorRouter.get("/calendar/callback", asyncHandler(googleCalendarCallbackController));
 doctorRouter.use(requireAuth, requireRole("DOCTOR"));
 doctorRouter.get("/dashboard", asyncHandler(doctorDashboardController));
 doctorRouter.get("/appointments", asyncHandler(doctorAppointmentsController));
@@ -25,7 +29,9 @@ doctorRouter.post("/appointments/:id/ai/retry", asyncHandler(doctorRetryAiContro
 doctorRouter.patch("/appointments/:id/notes", asyncHandler(doctorSaveNotesController));
 doctorRouter.post("/appointments/:id/prescriptions", asyncHandler(doctorIssuePrescriptionController));
 doctorRouter.post("/appointments/:id/complete", asyncHandler(doctorCompleteVisitController));
+doctorRouter.post("/appointments/:id/cancel", asyncHandler(cancelAppointmentController));
 doctorRouter.get("/patients", asyncHandler(doctorPatientsController));
 doctorRouter.get("/profile", asyncHandler(doctorProfileController));
 doctorRouter.post("/calendar/connect", asyncHandler(doctorCalendarConnectController));
 doctorRouter.post("/calendar/disconnect", asyncHandler(doctorCalendarDisconnectController));
+doctorRouter.get("/calendar/status", asyncHandler(doctorCalendarStatusController));

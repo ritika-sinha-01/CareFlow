@@ -14,7 +14,7 @@ export type EmailSendResult = {
   providerId: string;
 };
 
-export type EmailTransportName = "resend" | "smtp" | "unconfigured";
+export type EmailTransportName = "resend" | "smtp" | "test" | "unconfigured";
 
 export interface EmailTransport {
   name: EmailTransportName;
@@ -22,12 +22,24 @@ export interface EmailTransport {
   send(input: EmailSendInput): Promise<EmailSendResult>;
 }
 
+export const testEmailOutbox: EmailSendInput[] = [];
+
 class UnconfiguredEmailTransport implements EmailTransport {
   name = "unconfigured" as const;
   configured = false;
 
   async send(): Promise<EmailSendResult> {
     throw new Error("Email is not configured.");
+  }
+}
+
+export class TestEmailTransport implements EmailTransport {
+  name = "test" as const;
+  configured = true;
+
+  async send(input: EmailSendInput): Promise<EmailSendResult> {
+    testEmailOutbox.push(input);
+    return { providerId: `test-${testEmailOutbox.length}` };
   }
 }
 
@@ -87,6 +99,10 @@ class SmtpEmailTransport implements EmailTransport {
 }
 
 export function createEmailTransport(): EmailTransport {
+  if (env.EMAIL_PROVIDER === "test") {
+    return new TestEmailTransport();
+  }
+
   if (env.EMAIL_PROVIDER === "resend" && env.RESEND_API_KEY) {
     return new ResendEmailTransport(env.RESEND_API_KEY);
   }
@@ -101,7 +117,7 @@ export function createEmailTransport(): EmailTransport {
 export const emailTransport = createEmailTransport();
 
 export async function sendEmail(input: EmailSendInput): Promise<EmailSendResult> {
-  if (shouldSimulate("EMAIL")) {
+  if (await shouldSimulate("EMAIL")) {
     throw new Error("Simulated email failure.");
   }
   return emailTransport.send(input);

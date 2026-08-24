@@ -2,11 +2,14 @@ import { prisma } from "../db/prisma.js";
 import { Errors } from "../utils/app-error.js";
 import { activeOccupancyKey } from "../utils/occupancy-key.js";
 import {
+  addCalendarDays,
   addMinutes,
   combineLocalDateAndTime,
   formatSlotLabel,
   isoDate,
+  toClinicDateInput,
   weekdayOf,
+  clinicTimeZone,
 } from "../utils/clinic-time.js";
 import { env } from "../config/env.js";
 
@@ -30,10 +33,11 @@ export function generateSlotStarts(
   startTime: string,
   endTime: string,
   durationMin: number,
+  timeZone = env.CLINIC_TIMEZONE,
 ): Date[] {
   const starts: Date[] = [];
-  let cursor = combineLocalDateAndTime(dateStr, startTime);
-  const end = combineLocalDateAndTime(dateStr, endTime);
+  let cursor = combineLocalDateAndTime(dateStr, startTime, timeZone);
+  const end = combineLocalDateAndTime(dateStr, endTime, timeZone);
   while (addMinutes(cursor, durationMin).getTime() <= end.getTime()) {
     starts.push(cursor);
     cursor = addMinutes(cursor, durationMin);
@@ -58,6 +62,7 @@ export async function listSlotsForDoctor(doctorId: string, dateStr: string, view
   if (!hours) {
     return {
       date: dateStr,
+      clinicTimezone: clinicTimeZone(),
       slotDurationMin: doctor.slotDurationMin,
       holdMinutes: env.SLOT_HOLD_MINUTES,
       closed: true,
@@ -91,7 +96,9 @@ export async function listSlotsForDoctor(doctorId: string, dateStr: string, view
       state = "UNAVAILABLE";
     } else if (startAt.getTime() <= now) {
       state = "PAST";
-    } else if (row?.status === "BOOKED" || row?.status === "BLOCKED") {
+    } else if (row?.status === "BLOCKED") {
+      state = "UNAVAILABLE";
+    } else if (row?.status === "BOOKED") {
       state = "BOOKED";
     } else if (row?.status === "HELD") {
       holdExpiresAt = row.holdExpiresAt?.toISOString() ?? null;
@@ -113,6 +120,7 @@ export async function listSlotsForDoctor(doctorId: string, dateStr: string, view
 
   return {
     date: dateStr,
+    clinicTimezone: clinicTimeZone(),
     slotDurationMin: doctor.slotDurationMin,
     holdMinutes: env.SLOT_HOLD_MINUTES,
     closed: false,
@@ -128,12 +136,12 @@ export async function assertSlotBookable(doctorId: string, startAt: Date): Promi
   });
   if (!doctor) throw Errors.notFound("This doctor profile is not available.");
 
-  const dateStr = `${startAt.getFullYear()}-${String(startAt.getMonth() + 1).padStart(2, "0")}-${String(startAt.getDate()).padStart(2, "0")}`;
+  const dateStr = toClinicDateInput(startAt);
   if (isOnLeave(doctor.leaves, dateStr)) {
-    throw Errors.doctorUnavailable();
+    throw Errors.doctorOnLeave();
   }
 
-  const hours = doctor.workingHours.find((item) => item.weekday === startAt.getDay());
+  const hours = doctor.workingHours.find((item) => item.weekday === weekdayOf(dateStr));
   if (!hours) throw Errors.doctorUnavailable();
 
   const validStarts = generateSlotStarts(dateStr, hours.startTime, hours.endTime, doctor.slotDurationMin);
@@ -145,11 +153,9 @@ export async function assertSlotBookable(doctorId: string, startAt: Date): Promi
 }
 
 export async function nextAvailableSlot(doctorId: string): Promise<string | null> {
-  const today = new Date();
+  const todayStr = toClinicDateInput(new Date());
   for (let offset = 0; offset < 14; offset += 1) {
-    const day = new Date(today);
-    day.setDate(today.getDate() + offset);
-    const dateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+    const dateStr = addCalendarDays(todayStr, offset);
     const listed = await listSlotsForDoctor(doctorId, dateStr);
     const open = listed.slots.find((slot) => slot.state === "AVAILABLE");
     if (open) return open.startAt;

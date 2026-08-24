@@ -1,27 +1,15 @@
 import { prisma } from "../db/prisma.js";
 import type { AuthUser } from "../middleware/auth.js";
 import { Errors } from "../utils/app-error.js";
+import { clinicDayBounds } from "../utils/clinic-time.js";
 import { displayName, toPublicUser } from "../utils/serializers.js";
 import { requireDoctorRecord } from "./appointment-access.service.js";
 import { appointmentInclude, serializeAppointment } from "./appointment-serialize.js";
 
-function startOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function endOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(23, 59, 59, 999);
-  return next;
-}
-
 export async function getDoctorDashboard(user: AuthUser) {
   const doctor = await requireDoctorRecord(user.id);
   const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
+  const { start: todayStart, endExclusive: todayEnd } = clinicDayBounds(now);
 
   const [profile, today, upcoming] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: user.id } }),
@@ -29,7 +17,7 @@ export async function getDoctorDashboard(user: AuthUser) {
       where: {
         doctorId: doctor.id,
         status: { in: ["BOOKED", "HELD"] },
-        startAt: { gte: todayStart, lte: todayEnd },
+        startAt: { gte: todayStart, lt: todayEnd },
       },
       include: appointmentInclude,
       orderBy: { startAt: "asc" },
@@ -127,7 +115,7 @@ export async function getDoctorProfile(user: AuthUser) {
       slotDurationMin: doctor.slotDurationMin,
       yearsExperience: doctor.yearsExperience,
       isDemo: doctor.isDemo,
-      calendarConnected: doctor.calendarConnected,
+      calendarConnected: doctor.user.calendarConnected,
       workingHours: doctor.workingHours,
     },
   };

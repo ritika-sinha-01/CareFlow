@@ -2,6 +2,9 @@ import { prisma } from "../db/prisma.js";
 import { env } from "../config/env.js";
 import { getWorkerHeartbeat } from "../jobs/heartbeat.service.js";
 import { getEmailConfigurationState } from "./email.service.js";
+import { getAiConfigurationState } from "./ai.service.js";
+import { getCalendarConfigurationState } from "./calendar.service.js";
+import { shouldSimulate } from "./demo-simulation.service.js";
 
 export const HEALTH_STATUSES = ["OPERATIONAL", "DEGRADED", "UNAVAILABLE"] as const;
 export type HealthStatus = (typeof HEALTH_STATUSES)[number];
@@ -24,6 +27,7 @@ export type HealthComponent = {
 export type SystemHealth = {
   status: HealthStatus;
   checkedAt: string;
+  clinicTimezone: string;
   components: HealthComponent[];
 };
 
@@ -72,22 +76,44 @@ async function checkAppointmentEngine(databaseStatus: HealthStatus): Promise<Hea
   };
 }
 
-function checkAiService(): HealthComponent {
-  if (!env.OPENAI_API_KEY) {
+async function checkAiService(): Promise<HealthComponent> {
+  if (await shouldSimulate("AI")) {
+    return {
+      name: "AI_SERVICE",
+      status: "DEGRADED",
+      detail: "Demo simulation is forcing AI failures — booking still works",
+    };
+  }
+  const state = getAiConfigurationState();
+  if (!state.configured) {
     return {
       name: "AI_SERVICE",
       status: "UNAVAILABLE",
       detail: "No API key configured — booking still works",
     };
   }
+  if (state.provider === "mock") {
+    return {
+      name: "AI_SERVICE",
+      status: "OPERATIONAL",
+      detail: "Mock adapter — live OpenAI is not used",
+    };
+  }
   return {
     name: "AI_SERVICE",
     status: "OPERATIONAL",
-    detail: `Configured (${env.OPENAI_MODEL})`,
+    detail: `API key configured for ${env.OPENAI_MODEL} — live calls are not probed`,
   };
 }
 
-function checkEmailService(): HealthComponent {
+async function checkEmailService(): Promise<HealthComponent> {
+  if (await shouldSimulate("EMAIL")) {
+    return {
+      name: "EMAIL_SERVICE",
+      status: "DEGRADED",
+      detail: "Demo simulation is forcing email failures — booking still works",
+    };
+  }
   const state = getEmailConfigurationState();
   if (!state.configured) {
     return {
@@ -96,10 +122,17 @@ function checkEmailService(): HealthComponent {
       detail: "No Resend or SMTP credentials — booking still works",
     };
   }
+  if (state.provider === "test") {
+    return {
+      name: "EMAIL_SERVICE",
+      status: "OPERATIONAL",
+      detail: "Test adapter — messages are not delivered to a live mailbox",
+    };
+  }
   return {
     name: "EMAIL_SERVICE",
     status: "OPERATIONAL",
-    detail: `Configured via ${state.provider}`,
+    detail: `Credentials present for ${state.provider} — live send is not probed`,
   };
 }
 
@@ -129,8 +162,17 @@ async function checkWorker(): Promise<HealthComponent> {
   };
 }
 
-function checkCalendar(): HealthComponent {
-  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+async function checkCalendar(): Promise<HealthComponent> {
+  if (await shouldSimulate("CALENDAR")) {
+    return {
+      name: "GOOGLE_CALENDAR",
+      status: "DEGRADED",
+      detail: "Demo simulation is forcing calendar failures — appointments remain valid",
+      optional: true,
+    };
+  }
+  const state = getCalendarConfigurationState();
+  if (!state.configured) {
     return {
       name: "GOOGLE_CALENDAR",
       status: "UNAVAILABLE",
@@ -138,10 +180,18 @@ function checkCalendar(): HealthComponent {
       optional: true,
     };
   }
+  if (state.provider === "mock") {
+    return {
+      name: "GOOGLE_CALENDAR",
+      status: "OPERATIONAL",
+      detail: "Mock adapter — live Google Calendar is not used",
+      optional: true,
+    };
+  }
   return {
     name: "GOOGLE_CALENDAR",
     status: "OPERATIONAL",
-    detail: "OAuth credentials present",
+    detail: "OAuth credentials present — live Calendar API is not probed",
     optional: true,
   };
 }
@@ -162,7 +212,7 @@ export function deriveOverallStatus(components: HealthComponent[]): HealthStatus
 
 export async function getSystemHealth(): Promise<SystemHealth> {
   const database = await checkDatabase();
-  const [appointmentEngine, worker] = await Promise.all([
+  const [appointmentEngine, worker, ai, email, calendar] = await Promise.all([
     checkAppointmentEngine(database.status),
     database.status === "OPERATIONAL"
       ? checkWorker()
@@ -171,20 +221,17 @@ export async function getSystemHealth(): Promise<SystemHealth> {
           status: "UNAVAILABLE" as const,
           detail: "Waiting for database",
         }),
-  ]);
-
-  const components: HealthComponent[] = [
-    database,
-    appointmentEngine,
     checkAiService(),
     checkEmailService(),
-    worker,
     checkCalendar(),
-  ];
+  ]);
+
+  const components: HealthComponent[] = [database, appointmentEngine, ai, email, worker, calendar];
 
   return {
     status: deriveOverallStatus(components),
     checkedAt: new Date().toISOString(),
+    clinicTimezone: env.CLINIC_TIMEZONE,
     components,
   };
 }

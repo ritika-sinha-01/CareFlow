@@ -4,13 +4,13 @@ import { nextRetryAt } from "../jobs/retry.js";
 import { generatePostVisitSummary, generatePreVisitBriefing } from "./ai.service.js";
 import { syncAppointmentCalendar } from "./calendar.service.js";
 
-type CalendarPayload = {
+type JobPayload = {
   appointmentId?: string;
   action?: "create" | "update" | "delete";
 };
 
-function payloadOf(job: Job): CalendarPayload {
-  return (job.payload ?? {}) as CalendarPayload;
+function payloadOf(job: Job): JobPayload {
+  return (job.payload ?? {}) as JobPayload;
 }
 
 export async function processDueJobs(limit = 10): Promise<number> {
@@ -50,6 +50,26 @@ export async function processDueJobs(limit = 10): Promise<number> {
           processedAt: exhausted ? new Date() : null,
         },
       });
+
+      const appointmentId = payloadOf(job).appointmentId;
+      if (exhausted && appointmentId) {
+        if (job.type === "GENERATE_PRE_VISIT_AI") {
+          await prisma.appointment.updateMany({
+            where: { id: appointmentId, aiPreVisitStatus: { in: ["PENDING", "RETRYING"] } },
+            data: { aiPreVisitStatus: "FAILED" },
+          });
+        }
+        if (job.type === "CALENDAR_SYNC") {
+          await prisma.appointmentCalendarEvent.updateMany({
+            where: { appointmentId, syncStatus: { in: ["PENDING", "RETRYING"] } },
+            data: { syncStatus: "FAILED" },
+          });
+          await prisma.appointment.updateMany({
+            where: { id: appointmentId, calendarSyncStatus: { in: ["PENDING", "RETRYING"] } },
+            data: { calendarSyncStatus: "FAILED" },
+          });
+        }
+      }
     }
   }
 

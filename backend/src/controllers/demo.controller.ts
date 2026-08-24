@@ -6,15 +6,16 @@ import {
   listSimulationFlags,
   setSimulationFlag,
   simulationGateOpen,
+  SIMULATION_FLAGS,
   type SimulationFlag,
 } from "../services/demo-simulation.service.js";
 
 const flagSchema = z.object({
-  flag: z.enum(["AI", "EMAIL", "CALENDAR", "BOOKING_CONFLICT", "LEAVE_CONFLICT"]),
+  flag: z.enum(SIMULATION_FLAGS),
   enabled: z.boolean(),
 });
 
-export function getSimulationController(_req: Request, res: Response): void {
+export async function getSimulationController(_req: Request, res: Response): Promise<void> {
   if (!simulationGateOpen()) {
     throw Errors.simulationDisabled();
   }
@@ -22,18 +23,18 @@ export function getSimulationController(_req: Request, res: Response): void {
   res.json(
     apiSuccess({
       enabled: true,
-      activeFlags: listSimulationFlags(),
-      availableFlags: ["AI", "EMAIL", "CALENDAR", "BOOKING_CONFLICT", "LEAVE_CONFLICT"],
+      activeFlags: await listSimulationFlags(),
+      availableFlags: SIMULATION_FLAGS,
     }),
   );
 }
 
-export function updateSimulationController(req: Request, res: Response): void {
+export async function updateSimulationController(req: Request, res: Response): Promise<void> {
   if (!simulationGateOpen()) {
     throw Errors.simulationDisabled();
   }
 
   const body = flagSchema.parse(req.body);
-  const activeFlags = setSimulationFlag(body.flag as SimulationFlag, body.enabled);
+  const activeFlags = await setSimulationFlag(body.flag as SimulationFlag, body.enabled);
   res.json(apiSuccess({ enabled: true, activeFlags }));
 }

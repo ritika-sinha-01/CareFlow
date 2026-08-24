@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AppointmentCard } from "@/components/AppointmentCard";
+import { CalendarParticipants } from "@/components/CalendarParticipants";
 import { AppointmentStatusBadge, CalendarStatusBadge } from "@/components/DomainBadges";
 import { EmptyState, PageHeader, QueryError, SkeletonBlock } from "@/components/Page";
 import { SlotGrid } from "@/components/SlotGrid";
@@ -118,6 +119,7 @@ export function PatientAppointmentDetailPage() {
         <CalendarStatusBadge status={data.calendarSyncStatus} />
       </div>
       {actionError ? <QueryError message={actionError} /> : null}
+      <CalendarParticipants participants={data.calendarParticipants} />
 
       {canCancel || canReschedule ? (
         <div className="flex flex-wrap gap-2">

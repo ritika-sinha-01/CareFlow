@@ -18,7 +18,7 @@ export async function getVisibleAppointment(id: string, user: AuthUser) {
   });
 
   if (!appointment) {
-    throw Errors.notFound("This appointment is not available.");
+    throw Errors.appointmentNotFound();
   }
 
   if (user.role === "ADMIN") {
@@ -36,5 +36,5 @@ export async function getVisibleAppointment(id: string, user: AuthUser) {
     }
   }
 
-  throw Errors.notFound("This appointment is not available.");
+  throw Errors.appointmentNotFound();
 }

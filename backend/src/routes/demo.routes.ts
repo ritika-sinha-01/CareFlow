@@ -4,9 +4,10 @@ import {
   getSimulationController,
   updateSimulationController,
 } from "../controllers/demo.controller.js";
+import { asyncHandler } from "../utils/async-handler.js";
 
 export const demoRouter = Router();
 
 demoRouter.use(requireAuth, requireRole("ADMIN"));
-demoRouter.get("/simulation", getSimulationController);
-demoRouter.post("/simulation", updateSimulationController);
+demoRouter.get("/simulation", asyncHandler(getSimulationController));
+demoRouter.post("/simulation", asyncHandler(updateSimulationController));

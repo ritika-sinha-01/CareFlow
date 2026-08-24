@@ -30,6 +30,7 @@ export type PublicSlot = {
 
 export type SlotDay = {
   date: string;
+  clinicTimezone?: string;
   slotDurationMin: number;
   holdMinutes: number;
   closed: boolean;
@@ -49,6 +50,13 @@ export type DoctorCard = {
   nextAvailableAt?: string | null;
 };
 
+export type CalendarParticipant = {
+  role: "DOCTOR" | "PATIENT";
+  name: string | null;
+  status: string;
+  error: string | null;
+};
+
 export type AppointmentSummary = {
   id: string;
   status: string;
@@ -56,6 +64,7 @@ export type AppointmentSummary = {
   endAt: string;
   holdExpiresAt: string | null;
   calendarSyncStatus: string;
+  calendarParticipants?: CalendarParticipant[];
   symptoms?: string | null;
   patientSummary?: string | null;
   followUpSteps?: string[];
@@ -104,4 +113,8 @@ export function homeForRole(role: UserRole): string {
   if (role === "DOCTOR") return "/doctor/dashboard";
   if (role === "ADMIN") return "/admin/dashboard";
   return "/patient/dashboard";
+}
+
+export function canAccessRoute(role: UserRole | null, allowed: UserRole[]): boolean {
+  return role !== null && allowed.includes(role);
 }

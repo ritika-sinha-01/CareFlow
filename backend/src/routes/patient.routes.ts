@@ -7,6 +7,9 @@ import {
   confirmHoldController,
   holdSlotController,
   patientAppointmentsController,
+  patientCalendarConnectController,
+  patientCalendarDisconnectController,
+  patientCalendarStatusController,
   patientDashboardController,
   patientDoctorController,
   patientDoctorsController,
@@ -16,9 +19,11 @@ import {
   rescheduleAppointmentController,
   updateProfileController,
 } from "../controllers/portal.controller.js";
+import { googleCalendarCallbackController } from "../controllers/integrations.controller.js";
 
 export const patientRouter = Router();
 
+patientRouter.get("/calendar/callback", asyncHandler(googleCalendarCallbackController));
 patientRouter.use(requireAuth, requireRole("PATIENT"));
 patientRouter.get("/dashboard", asyncHandler(patientDashboardController));
 patientRouter.get("/appointments", asyncHandler(patientAppointmentsController));
@@ -33,3 +38,6 @@ patientRouter.get("/doctors", asyncHandler(patientDoctorsController));
 patientRouter.get("/doctors/:id/slots", asyncHandler(patientSlotsController));
 patientRouter.get("/doctors/:id", asyncHandler(patientDoctorController));
 patientRouter.patch("/profile", asyncHandler(updateProfileController));
+patientRouter.post("/calendar/connect", asyncHandler(patientCalendarConnectController));
+patientRouter.post("/calendar/disconnect", asyncHandler(patientCalendarDisconnectController));
+patientRouter.get("/calendar/status", asyncHandler(patientCalendarStatusController));

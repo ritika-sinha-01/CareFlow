@@ -1,34 +1,41 @@
-const dateTime = new Intl.DateTimeFormat("en-IN", {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  hour: "numeric",
-  minute: "2-digit",
-});
+export const CLINIC_TIMEZONE = import.meta.env.VITE_CLINIC_TIMEZONE || "Asia/Kolkata";
 
-const dateOnly = new Intl.DateTimeFormat("en-IN", {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-});
-
-export function formatDateTime(value: string): string {
-  return dateTime.format(new Date(value));
-}
-
-export function formatDate(value: string): string {
-  return dateOnly.format(new Date(value));
-}
-
-export function formatTime(value: string): string {
+export function formatDateTime(value: string, timeZone = CLINIC_TIMEZONE): string {
   return new Intl.DateTimeFormat("en-IN", {
+    timeZone,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
 }
 
-export function greetingForNow(): string {
-  const hour = new Date().getHours();
+export function formatDate(value: string, timeZone = CLINIC_TIMEZONE): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(value));
+}
+
+export function formatTime(value: string, timeZone = CLINIC_TIMEZONE): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+export function greetingForNow(now = new Date(), timeZone = CLINIC_TIMEZONE): string {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      hourCycle: "h23",
+    }).format(now),
+  );
   if (hour < 12) return "Good morning";
   if (hour < 17) return "Good afternoon";
   return "Good evening";
@@ -36,17 +43,30 @@ export function greetingForNow(): string {
 
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export function toDateInputValue(date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+export function toDateInputValue(date = new Date(), timeZone = CLINIC_TIMEZONE): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
 }
 
-export function addDaysToInput(days: number, from = new Date()): string {
-  const date = new Date(from);
-  date.setDate(date.getDate() + days);
-  return toDateInputValue(date);
+export function addDaysToInput(days: number, from = new Date(), timeZone = CLINIC_TIMEZONE): string {
+  const today = toDateInputValue(from, timeZone);
+  const [year, month, day] = today.split("-").map(Number);
+  const utc = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + days));
+  return `${utc.getUTCFullYear()}-${String(utc.getUTCMonth() + 1).padStart(2, "0")}-${String(utc.getUTCDate()).padStart(2, "0")}`;
+}
+
+export function remainingHoldSeconds(holdExpiresAt: string | null | undefined, now = Date.now()): number | null {
+  if (!holdExpiresAt) return null;
+  return Math.max(0, Math.floor((new Date(holdExpiresAt).getTime() - now) / 1000));
+}
+
+export function isHoldExpired(holdExpiresAt: string | null | undefined, now = Date.now()): boolean {
+  const remaining = remainingHoldSeconds(holdExpiresAt, now);
+  return remaining !== null && remaining <= 0;
 }
 
 export function formatRemaining(seconds: number): string {

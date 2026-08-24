@@ -1,4 +1,6 @@
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { CalendarConnectionCard } from "@/components/CalendarConnectionCard";
+import { CalendarParticipants } from "@/components/CalendarParticipants";
 import { AppointmentCard, NextVisitHero } from "@/components/AppointmentCard";
 import { CalendarStatusBadge, UrgencyBadge } from "@/components/DomainBadges";
 import { EmptyState, PageHeader, QueryError, SkeletonBlock } from "@/components/Page";
@@ -166,6 +168,7 @@ export function DoctorAppointmentDetailPage() {
         <CalendarStatusBadge status={data.calendarSyncStatus} />
         {data.ai ? <UrgencyBadge urgency={data.ai.urgency} /> : null}
       </div>
+      <CalendarParticipants participants={data.calendarParticipants} />
       {retryError ? <QueryError message={retryError} /> : null}
       <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
         <PreVisitBrief
@@ -502,9 +505,7 @@ export function DoctorPatientsPage() {
 }
 
 export function DoctorProfilePage() {
-  const { token } = useAuth();
-  const [params] = useSearchParams();
-  const { data, error, loading, refetch } = useApi<{
+  const { data, error, loading } = useApi<{
     user: PublicUser;
     doctor: {
       specialization: string;
@@ -515,55 +516,19 @@ export function DoctorProfilePage() {
       workingHours: Array<{ weekday: number; startTime: string; endTime: string }>;
     };
   }>("/api/doctor/profile");
-  const [calendarError, setCalendarError] = useState<string | null>(null);
-  const calendarStatus = params.get("calendar");
 
   if (loading) return <SkeletonBlock className="h-40" />;
   if (error) return <QueryError message={error} />;
   if (!data) return null;
 
-  async function connectCalendar() {
-    if (!token) return;
-    setCalendarError(null);
-    try {
-      const result = await apiRequest<{ configured: boolean; url: string | null }>("/api/doctor/calendar/connect", {
-        method: "POST",
-        token,
-        body: { returnTo: window.location.origin },
-      });
-      if (!result.configured || !result.url) {
-        setCalendarError("Google Calendar is not configured. Appointments remain valid without it.");
-        return;
-      }
-      window.location.assign(result.url);
-    } catch (caught) {
-      setCalendarError(caught instanceof ApiRequestError ? caught.message : "Calendar could not be connected.");
-    }
-  }
-
-  async function disconnectCalendar() {
-    if (!token) return;
-    setCalendarError(null);
-    try {
-      await apiRequest("/api/doctor/calendar/disconnect", { method: "POST", token });
-      refetch();
-    } catch (caught) {
-      setCalendarError(caught instanceof ApiRequestError ? caught.message : "Calendar could not be disconnected.");
-    }
-  }
-
   return (
     <div>
       <PageHeader title="Profile" description={data.doctor.isDemo ? "Demo clinician profile." : "Your clinic profile."} />
-      {calendarStatus === "connected" ? (
-        <p className="mb-4 text-sm text-muted-foreground">Google Calendar connected. New visits will sync in the background.</p>
-      ) : null}
-      {calendarStatus === "error" ? (
-        <div className="mb-4">
-          <QueryError message="Google Calendar could not be connected. Your appointments are unchanged." />
-        </div>
-      ) : null}
-      {calendarError ? <div className="mb-4"><QueryError message={calendarError} /></div> : null}
+      <CalendarConnectionCard
+        connectPath="/api/doctor/calendar/connect"
+        disconnectPath="/api/doctor/calendar/disconnect"
+        statusPath="/api/doctor/calendar/status"
+      />
       <Card>
         <CardHeader>
           <CardTitle>
@@ -574,16 +539,6 @@ export function DoctorProfilePage() {
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>{data.doctor.bio}</p>
           <p>Visit length: {data.doctor.slotDurationMin} minutes</p>
-          <p>Google Calendar: {data.doctor.calendarConnected ? "Connected" : "Not connected"}</p>
-          {data.doctor.calendarConnected ? (
-            <Button variant="outline" size="sm" onClick={() => void disconnectCalendar()}>
-              Disconnect calendar
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => void connectCalendar()}>
-              Connect Google Calendar
-            </Button>
-          )}
           {data.doctor.workingHours.map((item) => (
             <p key={item.weekday}>
               {WEEKDAYS[item.weekday]} · {item.startTime}–{item.endTime}

@@ -31,6 +31,15 @@ const booleanFromString = z
     return false;
   });
 
+function isValidTimeZone(timeZone: string): boolean {
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_ENV: z.enum(["development", "demo", "production"]).default("development"),
@@ -43,7 +52,9 @@ const envSchema = z.object({
   SLOT_HOLD_MINUTES: z.coerce.number().int().positive().default(5),
   WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(2000),
   WORKER_HEARTBEAT_STALE_MS: z.coerce.number().int().positive().default(15000),
-  EMAIL_PROVIDER: z.enum(["resend", "smtp"]).default("resend"),
+  CLINIC_TIMEZONE: z.string().default("Asia/Kolkata"),
+  APPOINTMENT_REMINDER_HOURS: z.coerce.number().int().positive().default(24),
+  EMAIL_PROVIDER: z.enum(["resend", "smtp", "test"]).default("resend"),
   EMAIL_FROM: z.string().default("CareFlow <noreply@example.com>"),
   RESEND_API_KEY: optionalString,
   SMTP_HOST: optionalString,
@@ -51,11 +62,14 @@ const envSchema = z.object({
   SMTP_USER: optionalString,
   SMTP_PASS: optionalString,
   SMTP_SECURE: booleanFromString,
+  AI_PROVIDER: z.enum(["openai", "mock"]).default("openai"),
   OPENAI_API_KEY: optionalString,
   OPENAI_MODEL: z.string().default("gpt-4o-mini"),
+  CALENDAR_PROVIDER: z.enum(["google", "mock"]).default("google"),
   GOOGLE_CLIENT_ID: optionalString,
   GOOGLE_CLIENT_SECRET: optionalString,
   GOOGLE_REDIRECT_URI: optionalString,
+  DEMO_MODE: booleanFromString,
   ENABLE_DEMO_SIMULATION: booleanFromString,
 });
 
@@ -67,6 +81,9 @@ function readEnv(raw: NodeJS.ProcessEnv = process.env): Env {
     const details = parsed.error.flatten().fieldErrors;
     throw new Error(`Invalid environment configuration: ${JSON.stringify(details)}`);
   }
+  if (!isValidTimeZone(parsed.data.CLINIC_TIMEZONE)) {
+    throw new Error(`Invalid CLINIC_TIMEZONE: ${parsed.data.CLINIC_TIMEZONE}`);
+  }
   return parsed.data;
 }
 
@@ -76,7 +93,11 @@ export function isProductionEnv(values: Pick<Env, "APP_ENV" | "NODE_ENV"> = env)
   return values.APP_ENV === "production" || values.NODE_ENV === "production";
 }
 
-export function isDemoSimulationEnabled(values: Env = env): boolean {
+export function isDemoSimulationEnabled(
+  values: Pick<Env, "APP_ENV" | "NODE_ENV" | "DEMO_MODE" | "ENABLE_DEMO_SIMULATION"> = env,
+): boolean {
   if (isProductionEnv(values)) return false;
-  return values.ENABLE_DEMO_SIMULATION === true;
+  return values.DEMO_MODE === true || values.ENABLE_DEMO_SIMULATION === true;
 }
+
+export { isValidTimeZone };

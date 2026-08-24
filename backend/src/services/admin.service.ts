@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../db/prisma.js";
+import { addCalendarDays, clinicDayBounds, clinicLocalToUtc, isoDate } from "../utils/clinic-time.js";
 import { getSystemHealth } from "./health.service.js";
 import { displayName, toPublicUser } from "../utils/serializers.js";
 import { appointmentInclude, serializeAppointment } from "./appointment-serialize.js";
@@ -7,22 +8,13 @@ import type { z } from "zod";
 import type { createDoctorSchema } from "../validators/auth.validators.js";
 import { Errors } from "../utils/app-error.js";
 
-function startOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(0, 0, 0, 0);
-  return next;
-}
-
-function endOfDay(date: Date) {
-  const next = new Date(date);
-  next.setHours(23, 59, 59, 999);
-  return next;
+function leaveEndExclusive(endDate: Date) {
+  return clinicLocalToUtc(addCalendarDays(isoDate(endDate), 1), "00:00");
 }
 
 export async function getAdminDashboard() {
   const now = new Date();
-  const todayStart = startOfDay(now);
-  const todayEnd = endOfDay(now);
+  const { start: todayStart, endExclusive: todayEnd } = clinicDayBounds(now);
 
   const [doctors, patients, todayAppointments, upcomingAppointments, failedNotifications, leaves, health, events] =
     await Promise.all([
@@ -31,7 +23,7 @@ export async function getAdminDashboard() {
       prisma.appointment.count({
         where: {
           status: { in: ["BOOKED", "HELD"] },
-          startAt: { gte: todayStart, lte: todayEnd },
+          startAt: { gte: todayStart, lt: todayEnd },
         },
       }),
       prisma.appointment.count({
@@ -55,7 +47,7 @@ export async function getAdminDashboard() {
       where: {
         doctorId: leave.doctorId,
         status: { in: ["BOOKED", "HELD"] },
-        startAt: { gte: leave.startDate, lte: endOfDay(leave.endDate) },
+        startAt: { gte: leave.startDate, lt: leaveEndExclusive(leave.endDate) },
       },
     });
     if (affected > 0) {
@@ -125,7 +117,7 @@ export async function getAdminDoctor(id: string) {
     slotDurationMin: doctor.slotDurationMin,
     yearsExperience: doctor.yearsExperience,
     isDemo: doctor.isDemo,
-    calendarConnected: doctor.calendarConnected,
+    calendarConnected: doctor.user.calendarConnected,
     workingHours: doctor.workingHours,
     leaves: doctor.leaves.map((leave) => ({
       id: leave.id,
@@ -193,7 +185,7 @@ export async function listAdminLeave() {
         where: {
           doctorId: leave.doctorId,
           status: { in: ["BOOKED", "HELD"] },
-          startAt: { gte: leave.startDate, lte: endOfDay(leave.endDate) },
+          startAt: { gte: leave.startDate, lt: leaveEndExclusive(leave.endDate) },
         },
       });
       return {

@@ -171,13 +171,32 @@ export async function rescheduleAppointmentController(req: Request, res: Respons
 export async function doctorCalendarConnectController(req: Request, res: Response): Promise<void> {
   await requireDoctorRecord(req.user!.id);
   const input = calendarConnectSchema.parse(req.body ?? {});
-  res.json(apiSuccess(calendarService.getGoogleConnectUrl(req.user!.id, input.returnTo)));
+  res.json(apiSuccess(calendarService.getGoogleConnectUrl(req.user!.id, "DOCTOR", input.returnTo)));
 }
 
 export async function doctorCalendarDisconnectController(req: Request, res: Response): Promise<void> {
   await requireDoctorRecord(req.user!.id);
   await calendarService.disconnectGoogleCalendar(req.user!.id);
-  res.json(apiSuccess({ calendarConnected: false }));
+  res.json(apiSuccess({ connected: false, calendarConnected: false, status: "NOT_CONNECTED" }));
+}
+
+export async function doctorCalendarStatusController(req: Request, res: Response): Promise<void> {
+  await requireDoctorRecord(req.user!.id);
+  res.json(apiSuccess(await calendarService.getCalendarStatusForUser(req.user!.id)));
+}
+
+export async function patientCalendarConnectController(req: Request, res: Response): Promise<void> {
+  const input = calendarConnectSchema.parse(req.body ?? {});
+  res.json(apiSuccess(calendarService.getGoogleConnectUrl(req.user!.id, "PATIENT", input.returnTo)));
+}
+
+export async function patientCalendarDisconnectController(req: Request, res: Response): Promise<void> {
+  await calendarService.disconnectGoogleCalendar(req.user!.id);
+  res.json(apiSuccess({ connected: false, calendarConnected: false, status: "NOT_CONNECTED" }));
+}
+
+export async function patientCalendarStatusController(req: Request, res: Response): Promise<void> {
+  res.json(apiSuccess(await calendarService.getCalendarStatusForUser(req.user!.id)));
 }
 
 export async function doctorRetryAiController(req: Request, res: Response): Promise<void> {

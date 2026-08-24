@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/auth/AuthContext";
 import { ApiRequestError, apiRequest } from "@/lib/api";
-import { addDaysToInput, formatDateTime, formatRemaining, toDateInputValue } from "@/lib/dates";
+import { addDaysToInput, formatDateTime, formatRemaining, remainingHoldSeconds, toDateInputValue } from "@/lib/dates";
 import type { AppointmentSummary, DoctorCard, PublicSlot, SlotDay } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useApi } from "@/lib/use-api";
@@ -88,9 +88,9 @@ export function PatientBookPage() {
       return;
     }
     const tick = () => {
-      const seconds = Math.max(0, Math.floor((new Date(hold.holdExpiresAt!).getTime() - Date.now()) / 1000));
+      const seconds = remainingHoldSeconds(hold.holdExpiresAt, Date.now());
       setRemaining(seconds);
-      if (seconds <= 0 && !expiringRef.current) {
+      if (seconds !== null && seconds <= 0 && !expiringRef.current) {
         expiringRef.current = true;
         void onHoldExpired();
       }
@@ -196,13 +196,15 @@ export function PatientBookPage() {
 
       {hold?.status === "HELD" && remaining != null ? (
         <div
+          data-testid="hold-countdown"
           className={cn(
             "mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3 text-sm",
             remaining <= 60 && "motion-safe:animate-pulse",
           )}
         >
           <p>
-            Time held until {formatDateTime(hold.startAt)}. Remaining {formatRemaining(remaining)}.
+            Slot reserved for you until {formatDateTime(hold.holdExpiresAt ?? hold.startAt)}. Remaining{" "}
+            {formatRemaining(remaining)}.
           </p>
           <Button
             variant="ghost"
@@ -218,7 +220,11 @@ export function PatientBookPage() {
         </div>
       ) : null}
 
-      {actionError ? <div className="mb-4"><QueryError message={actionError} /></div> : null}
+      {actionError ? (
+        <div className="mb-4" data-testid="booking-error">
+          <QueryError message={actionError} />
+        </div>
+      ) : null}
       {loading ? <SkeletonBlock className="h-32" /> : null}
       {error ? <QueryError message={error} /> : null}
 

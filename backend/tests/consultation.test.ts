@@ -4,20 +4,11 @@ import request from "supertest";
 import { createApp } from "../src/app.js";
 import { prisma } from "../src/db/prisma.js";
 import { generatePostVisitSummary } from "../src/services/ai.service.js";
-import { processDueJobs } from "../src/services/job.service.js";
 import { activeOccupancyKey } from "../src/utils/occupancy-key.js";
+import { drainJobs, nextClinicMonday } from "./helpers.js";
 
 const app = createApp();
 const password = "CareFlow!demo1";
-
-function nextMonday(hour: number, minute: number) {
-  const date = new Date();
-  const daysUntilMonday = (1 + 7 - date.getDay()) % 7 || 7;
-  date.setDate(date.getDate() + daysUntilMonday);
-  date.setHours(hour, minute, 0, 0);
-  if (date.getTime() <= Date.now()) date.setDate(date.getDate() + 7);
-  return date;
-}
 
 describe("consultation workflow", () => {
   let doctorToken = "";
@@ -29,7 +20,7 @@ describe("consultation workflow", () => {
   beforeAll(async () => {
     const passwordHash = await bcrypt.hash(password, 4);
     const suffix = `${Date.now()}`;
-    const slot = nextMonday(13, 0);
+    const slot = nextClinicMonday("13:00");
 
     const doctorUser = await prisma.user.create({
       data: {
@@ -169,10 +160,10 @@ describe("consultation workflow", () => {
     expect(completed.body.data.postVisit.status).toBe("PENDING");
 
     await generatePostVisitSummary(appointmentId);
-    await processDueJobs(20);
+    await drainJobs();
 
     const row = await prisma.appointment.findUniqueOrThrow({ where: { id: appointmentId } });
-    expect(row.status).toBe("BOOKED");
+    expect(row.status).toBe("COMPLETED");
     expect(row.clinicalNotes).toContain("Allergic rhinitis");
     expect(row.aiPostVisitStatus).toBe("FAILED");
   });

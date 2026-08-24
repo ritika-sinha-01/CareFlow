@@ -13,6 +13,7 @@ type HealthStatus = "OPERATIONAL" | "DEGRADED" | "UNAVAILABLE";
 type HealthPayload = {
   status: HealthStatus;
   checkedAt: string;
+  clinicTimezone?: string;
   components: Array<{
     name: string;
     status: HealthStatus;
@@ -195,7 +196,12 @@ export function LandingPage() {
           {health ? (
             <Card className="mt-6">
               <CardHeader className="flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-base">Overall</CardTitle>
+                <div>
+                  <CardTitle className="text-base">Overall</CardTitle>
+                  {health.clinicTimezone ? (
+                    <CardDescription>Clinic timezone {health.clinicTimezone}</CardDescription>
+                  ) : null}
+                </div>
                 <StatusBadge label={health.status} tone={healthTone(health.status)} />
               </CardHeader>
               <CardContent className="grid gap-3 sm:grid-cols-2">

@@ -1,7 +1,7 @@
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useState, type FormEvent } from "react";
 import { AppointmentCard } from "@/components/AppointmentCard";
-import { NotificationStatusBadge } from "@/components/DomainBadges";
+import { AppointmentStatusBadge, NotificationStatusBadge } from "@/components/DomainBadges";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState, PageHeader, QueryError, SkeletonBlock } from "@/components/Page";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -118,8 +118,11 @@ export function AdminDashboardPage() {
 const simulationFlags = [
   { id: "AI", label: "AI briefing" },
   { id: "EMAIL", label: "Email delivery" },
-  { id: "CALENDAR", label: "Google Calendar" },
+  { id: "CALENDAR", label: "Google Calendar (both)" },
+  { id: "CALENDAR_DOCTOR", label: "Doctor calendar only" },
+  { id: "CALENDAR_PATIENT", label: "Patient calendar only" },
   { id: "BOOKING_CONFLICT", label: "Booking conflict" },
+  { id: "HOLD_EXPIRED", label: "Hold expired" },
   { id: "LEAVE_CONFLICT", label: "Leave resolution" },
 ] as const;
 
@@ -355,14 +358,42 @@ export function AdminAppointmentsPage() {
 
 export function AdminAppointmentDetailPage() {
   const { id } = useParams();
-  const { data, error, loading } = useApi<AppointmentSummary>(id ? `/api/admin/appointments/${id}` : null);
+  const { token } = useAuth();
+  const { data, error, loading, refetch } = useApi<AppointmentSummary>(id ? `/api/admin/appointments/${id}` : null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   if (loading) return <SkeletonBlock className="h-40" />;
   if (error) return <QueryError message={error} />;
   if (!data) return null;
+
+  const canCancel = data.status === "BOOKED" || data.status === "HELD";
+
+  async function cancelVisit() {
+    if (!token || !id) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await apiRequest(`/api/admin/appointments/${id}/cancel`, { method: "POST", token });
+      refetch();
+    } catch (caught) {
+      setActionError(caught instanceof ApiRequestError ? caught.message : "This appointment could not be cancelled.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader title={data.patient?.name ?? "Appointment"} description={data.doctor.name} />
+      <AppointmentStatusBadge status={data.status} />
       <p className="text-sm text-muted-foreground">{data.symptoms}</p>
+      {actionError ? <QueryError message={actionError} /> : null}
+      {canCancel ? (
+        <Button variant="outline" disabled={busy} onClick={() => void cancelVisit()}>
+          {busy ? "Cancelling…" : "Cancel appointment"}
+        </Button>
+      ) : null}
     </div>
   );
 }

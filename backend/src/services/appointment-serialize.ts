@@ -1,12 +1,39 @@
-import type { Appointment, AppointmentTimelineEvent, Doctor, Prescription, User } from "@prisma/client";
+import type { Appointment, AppointmentCalendarEvent, AppointmentTimelineEvent, Doctor, Prescription, User } from "@prisma/client";
 import { asPrescriptionItems, asStringArray, displayName } from "../utils/serializers.js";
+
+type CalendarEventRecord = AppointmentCalendarEvent & {
+  owner: Pick<User, "id" | "firstName" | "lastName" | "role">;
+};
 
 type AppointmentRecord = Appointment & {
   doctor: Doctor & { user: User };
   patient: User | null;
   timeline?: AppointmentTimelineEvent[];
   prescriptions?: Prescription[];
+  calendarEvents?: CalendarEventRecord[];
 };
+
+function serializeCalendarParticipants(appointment: AppointmentRecord) {
+  const doctorUserId = appointment.doctor.user.id;
+  const patientUserId = appointment.patient?.id;
+  const rows = appointment.calendarEvents ?? [];
+  const doctorRow = rows.find((row) => row.ownerUserId === doctorUserId);
+  const patientRow = patientUserId ? rows.find((row) => row.ownerUserId === patientUserId) : undefined;
+  return [
+    {
+      role: "DOCTOR" as const,
+      name: displayName(appointment.doctor.user),
+      status: doctorRow?.syncStatus ?? appointment.calendarSyncStatus,
+      error: doctorRow?.lastError ?? null,
+    },
+    {
+      role: "PATIENT" as const,
+      name: appointment.patient ? displayName(appointment.patient) : null,
+      status: patientRow?.syncStatus ?? appointment.calendarSyncStatus,
+      error: patientRow?.lastError ?? null,
+    },
+  ];
+}
 
 export function serializeAppointment(
   appointment: AppointmentRecord,
@@ -23,6 +50,7 @@ export function serializeAppointment(
     holdExpiresAt: appointment.holdExpiresAt?.toISOString() ?? null,
     cancelReason: appointment.cancelReason,
     calendarSyncStatus: appointment.calendarSyncStatus,
+    calendarParticipants: serializeCalendarParticipants(appointment),
     doctor: {
       id: appointment.doctor.id,
       name: doctorName,
@@ -102,4 +130,9 @@ export const appointmentInclude = {
   patient: true,
   timeline: { orderBy: { occurredAt: "asc" as const } },
   prescriptions: true,
+  calendarEvents: {
+    include: {
+      owner: { select: { id: true, firstName: true, lastName: true, role: true } },
+    },
+  },
 };

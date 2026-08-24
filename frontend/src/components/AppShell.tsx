@@ -16,7 +16,7 @@ import { Avatar } from "@/components/Avatar";
 import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/auth/AuthContext";
-import { homeForRole, type UserRole } from "@/lib/types";
+import { homeForRole, canAccessRoute, type UserRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const nav: Record<UserRole, Array<{ to: string; label: string; icon: typeof LayoutDashboard }>> = {
@@ -53,7 +53,7 @@ export function ProtectedRoute({ roles }: { roles: UserRole[] }) {
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
-  if (!roles.includes(user.role)) {
+  if (!canAccessRoute(user.role, roles)) {
     return <Navigate to={homeForRole(user.role)} replace />;
   }
   return <AppShell />;

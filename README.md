@@ -22,6 +22,32 @@ Built for patients, doctors, and clinic administrators, CareFlow combines a six-
 
 > **AI-generated content is assistive only and is never presented as a medical diagnosis.**
 
+## Live Demo
+
+**Hosted application:** `COMING SOON`
+
+**API health:** `COMING SOON`
+
+### Demo accounts
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | `admin@careflow.demo` | `CareFlow!demo1` |
+| Patient | `aarav.gupta@careflow.demo` | `CareFlow!demo1` |
+| Doctor | `ananya.sharma@careflow.demo` | `CareFlow!demo1` |
+
+> Demo accounts contain synthetic data only. They do not represent real patients or clinicians.
+
+### Recommended reviewer journey
+
+1. Patient → search doctor → select slot → enter symptoms → confirm appointment.
+2. Observe the five-minute server-side hold.
+3. Doctor → open the appointment → review the pre-visit brief.
+4. Doctor → add consultation notes → prescribe medication → complete visit.
+5. Admin → inspect clinic health and notification reliability.
+6. Admin → simulate an integration failure and observe retry/recovery behavior.
+7. Demonstrate concurrent booking protection: one request succeeds while the competing request receives `SLOT_UNAVAILABLE`.
+
 ## Product Overview
 
 Patients book through a six-step flow with a five-minute hold. Doctors receive pre-visit briefings, write notes, send prescriptions, and complete visits. Admins manage leave, occupancy conflicts, notifications, and system health. Demo failure simulation can show reviewers what happens when AI, email, calendar, booking, or leave resolution fail — without taking the clinic down.

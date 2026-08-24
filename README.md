@@ -114,6 +114,21 @@ Review Appointment
      ↓
 Confirm Booking
 ```
+## Technical Highlight: Concurrency-Safe Booking
+
+CareFlow does not use a simple:
+
+`check availability → insert appointment`
+
+flow.
+
+Instead, appointment occupancy is protected at the database level.
+
+For active appointments, PostgreSQL enforces uniqueness on:
+
+```text
+(doctor_id, occupancy_key)
+```
 
 ## Local setup
 

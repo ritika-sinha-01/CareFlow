@@ -99,6 +99,7 @@ Administrators can:
 
 # Core Booking Flow
 
+```text
 CareFlow uses a six-step booking experience rather than treating an appointment as a simple form submission.
 
 Search Doctor
@@ -112,6 +113,7 @@ Enter Symptoms / Visit Information
 Review Appointment
      ↓
 Confirm Booking
+```
 
 ## Local setup
 

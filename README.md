@@ -1,8 +1,26 @@
 # CareFlow
 
-Intelligent healthcare appointment and care management.
+### Intelligent Healthcare Appointment & Care Management Platform
 
-CareFlow is a quietly premium product for patients, doctors, and clinic admins. Appointments are occupancy records, not a calendar widget. Slot holds expire, concurrent booking is rejected by the database, and email, AI, and Google Calendar are optional side effects. If those integrations fail, the appointment remains valid. **AI is never a diagnosis.**
+CareFlow is a production-shaped healthcare appointment platform designed around one principle:
+
+> **A booking is a reliable business transaction — not just a calendar slot.**
+
+Built for patients, doctors, and clinic administrators, CareFlow combines a six-step booking experience with concurrency-safe appointment management, expiring slot holds, AI-assisted care workflows, notifications, Google Calendar synchronization, leave conflict resolution, and operational reliability tooling.
+
+### Why CareFlow stands out
+
+- 🔒 **Concurrency-safe booking** — PostgreSQL uniqueness prevents double-booking even under simultaneous requests.
+- ⏱️ **5-minute server-controlled slot holds** — expiry is enforced by the backend, not the browser.
+- 🤖 **AI-assisted, never AI-dependent** — AI failures never invalidate a confirmed appointment.
+- 📅 **Dual Google Calendar synchronization** — patient and doctor calendars are synchronized asynchronously.
+- 🔄 **Reliable background jobs** — email, AI, reminders, and calendar operations use retryable jobs.
+- 🏥 **Leave conflict resolution** — administrators can identify and resolve appointments affected by doctor leave.
+- 🛡️ **RBAC + resource isolation** — unauthorized appointment access returns 404 rather than leaking resource existence.
+- 🧪 **82 automated tests** — backend and frontend behavior is covered, including concurrency and failure scenarios.
+- 🌍 **Clinic timezone aware** — civil-time scheduling is handled using the configured clinic timezone while timestamps remain UTC.
+
+> **AI-generated content is assistive only and is never presented as a medical diagnosis.**
 
 ## Product Overview
 

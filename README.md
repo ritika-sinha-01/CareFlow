@@ -50,7 +50,69 @@ Built for patients, doctors, and clinic administrators, CareFlow combines a six-
 
 ## Product Overview
 
-Patients book through a six-step flow with a five-minute hold. Doctors receive pre-visit briefings, write notes, send prescriptions, and complete visits. Admins manage leave, occupancy conflicts, notifications, and system health. Demo failure simulation can show reviewers what happens when AI, email, calendar, booking, or leave resolution fail — without taking the clinic down.
+CareFlow provides separate experiences for three roles.
+
+### Patient Portal
+
+Patients can:
+
+- Register and sign in
+- Search and select doctors
+- View available appointment slots
+- Hold an appointment for five minutes
+- Enter symptoms and pre-visit information
+- Confirm, cancel, and reschedule appointments
+- View appointment history and timelines
+- View medications and reminders
+- Connect Google Calendar
+- Receive appointment-related notifications
+
+### Doctor Portal
+
+Doctors can:
+
+- View their appointment schedule
+- Review upcoming visits
+- Access AI-assisted pre-visit briefs
+- Review patient information relevant to the appointment
+- Add consultation notes
+- Create prescriptions
+- Complete visits
+- View patient care timelines
+- Connect Google Calendar
+
+### Admin Portal
+
+Administrators can:
+
+- Manage doctors
+- Configure working hours
+- Manage doctor leave
+- Detect appointment conflicts caused by leave
+- Resolve affected appointments
+- Monitor appointment occupancy
+- Inspect notification reliability
+- Monitor system health
+- Simulate integration failures in demo mode
+
+---
+
+# Core Booking Flow
+
+CareFlow uses a six-step booking experience rather than treating an appointment as a simple form submission.
+
+```text
+Search Doctor
+     ↓
+Select Date
+     ↓
+Select Available Slot
+     ↓
+Enter Symptoms / Visit Information
+     ↓
+Review Appointment
+     ↓
+Confirm Booking
 
 ## Local setup
 

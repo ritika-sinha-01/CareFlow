@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/auth/AuthContext";
-import { ApiRequestError } from "@/lib/api";
+import { authErrorMessage } from "@/lib/api";
 import { DEMO_UI_ENABLED } from "@/lib/demo-mode";
 import { homeForRole } from "@/lib/types";
 
@@ -38,7 +38,7 @@ export function LoginPage() {
       const from = (location.state as { from?: string } | null)?.from;
       navigate(from && from.startsWith("/") ? from : homeForRole(session.user.role), { replace: true });
     } catch (caught) {
-      setError(caught instanceof ApiRequestError ? caught.message : "Unable to sign in.");
+      setError(authErrorMessage(caught, "Unable to sign in."));
     } finally {
       setSubmitting(false);
     }
@@ -141,7 +141,7 @@ export function RegisterPage() {
       });
       navigate(homeForRole(session.user.role), { replace: true });
     } catch (caught) {
-      setError(caught instanceof ApiRequestError ? caught.message : "Unable to create your account.");
+      setError(authErrorMessage(caught, "Unable to create your account."));
     } finally {
       setSubmitting(false);
     }

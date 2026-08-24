@@ -71,7 +71,7 @@ Optional: keep `render.yaml` **worker-only** service (`npm run start:worker`) fo
 2. Vercel API project (Root Directory `backend`). Set production env (below). Deploy.
 3. Confirm `GET https://<api>/api/health/ready` returns 200.
 4. Vercel frontend (Root Directory `frontend`): `VITE_API_URL=https://<api>`.
-5. Set `FRONTEND_URL` and `CORS_ORIGIN` to the frontend origin. Set `GOOGLE_REDIRECT_URI` to `https://<api>/api/integrations/google/callback` if using Calendar.
+5. Set `FRONTEND_URL` and `CORS_ORIGIN` to the frontend origin with no trailing slash (for this deploy: `https://care-flow-frontend-eta.vercel.app`). The API allowlist also includes `FRONTEND_URL`, so a wrong `CORS_ORIGIN` host still works if `FRONTEND_URL` is the SPA. Set `GOOGLE_REDIRECT_URI` to `https://<api>/api/integrations/google/callback` if using Calendar.
 6. Set `CRON_SECRET` (Vercel can generate this for Cron). Confirm jobs if you rely on cron or run the optional Render worker.
 
 ## Environment (API project)

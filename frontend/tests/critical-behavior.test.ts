@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiRequestError, apiRequest, authErrorMessage } from "../src/lib/api";
 import {
   formatRemaining,
   isHoldExpired,
@@ -27,5 +28,28 @@ describe("booking hold countdown", () => {
 
   it("formats clinic calendar dates as YYYY-MM-DD", () => {
     expect(toDateInputValue(new Date("2026-08-24T03:30:00.000Z"), "Asia/Kolkata")).toBe("2026-08-24");
+  });
+});
+
+describe("API error surfacing", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows backend error messages to the user", () => {
+    expect(authErrorMessage(new ApiRequestError("CONFLICT", "An account with this email already exists.", 409), "Unable to create your account.")).toBe(
+      "An account with this email already exists.",
+    );
+  });
+
+  it("turns a failed fetch into a network error instead of a generic fallback", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+    );
+    await expect(apiRequest("/api/auth/register", { method: "POST", body: {} })).rejects.toMatchObject({
+      code: "NETWORK_ERROR",
+      status: 0,
+    });
   });
 });

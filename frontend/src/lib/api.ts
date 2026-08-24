@@ -44,22 +44,44 @@ type RequestOptions = {
   token?: string | null;
 };
 
+export function authErrorMessage(caught: unknown, fallback: string): string {
+  if (caught instanceof ApiRequestError) {
+    return caught.message;
+  }
+  return fallback;
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
 
-  const response = await fetch(`${API_URL}${path}`, {
-    method: options.method ?? "GET",
-    headers,
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method: options.method ?? "GET",
+      headers,
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+  } catch {
+    throw new ApiRequestError(
+      "NETWORK_ERROR",
+      "Unable to reach the CareFlow server. Please try again in a moment.",
+      0,
+    );
+  }
 
   let body: ApiSuccess<T> | ApiError;
   try {
     body = (await response.json()) as ApiSuccess<T> | ApiError;
   } catch {
-    throw new ApiRequestError("INTERNAL_ERROR", "Something went wrong. Please try again.", response.status);
+    throw new ApiRequestError(
+      "INTERNAL_ERROR",
+      response.status
+        ? `The server returned an unexpected response (${response.status}). Please try again.`
+        : "Something went wrong. Please try again.",
+      response.status,
+    );
   }
 
   if (!body.success) {

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import dotenv from "dotenv";
 import { z } from "zod";
+import { normalizeOrigin } from "./cors-origins.js";
 
 const envFiles = [
   resolve(process.cwd(), ".env"),
@@ -190,8 +191,12 @@ export function readEnv(raw: NodeJS.ProcessEnv = process.env): Env {
     throw new Error(`Invalid CLINIC_TIMEZONE: ${parsed.data.CLINIC_TIMEZONE}`);
   }
 
-  const frontendUrl = parsed.data.FRONTEND_URL ?? "http://localhost:5173";
-  const corsOrigin = parsed.data.CORS_ORIGIN ?? frontendUrl;
+  const frontendUrl = normalizeOrigin(parsed.data.FRONTEND_URL ?? "http://localhost:5173");
+  const corsOrigin = (parsed.data.CORS_ORIGIN ?? frontendUrl)
+    .split(",")
+    .map(normalizeOrigin)
+    .filter(Boolean)
+    .join(",") || frontendUrl;
   const production = isProductionProcessEnv(raw);
   const directUrl = parsed.data.DIRECT_URL ?? (production ? undefined : parsed.data.DATABASE_URL);
   if (!directUrl) {

@@ -1,74 +1,86 @@
-# CareFlow production deploy (Neon → Render → Vercel)
+# CareFlow production deploy (Neon → Vercel)
 
-Do not put secrets in this file. Set them in the host dashboards.
+Do not put secrets in this file. Set them in the Vercel (and optional worker) dashboards.
 
-Render **Starter** does not support `preDeployCommand`. Automatic deploys use this sequence:
+## Topology
 
-1. **Build** — `render.yaml` `buildCommand`
-2. **Migrate** — API `startCommand` runs `prisma migrate deploy` first
-3. **API** — `node backend/dist/index.js`
-4. **Worker** — `node backend/dist/worker.js` (does not migrate)
+| Piece | Where |
+|---|---|
+| Frontend SPA | Vercel project, Root Directory `frontend` |
+| HTTP API | Vercel project, Root Directory `backend` (Express as one serverless function) |
+| Background worker | Vercel Cron (`GET /api/internal/worker/tick`) **or** optional Render worker |
+| PostgreSQL | Neon (`DATABASE_URL` pooled, `DIRECT_URL` direct) |
 
-## 1. Build
+There is **no Socket.IO** in CareFlow. Nothing realtime needs a persistent Node server.
 
-Render API and worker (repo root):
+## 1. Build (API on Vercel)
 
-```text
-npm ci --include=dev && npm run db:generate && npm run build -w backend
-```
-
-`--include=dev` installs Prisma, TypeScript, and tsx even when `NODE_ENV=production`. Runtime remains `NODE_ENV=production`.
-
-Frontend (Vercel, Root Directory `frontend`):
+Create a Vercel project with **Root Directory** `backend`. `backend/vercel.json` sets:
 
 ```text
-npm run build
+install: cd .. && npm ci --include=dev
+build:   npm run vercel-build
 ```
 
-Requires `VITE_API_URL` (Render API origin). Do not leave it empty.
+`vercel-build` runs `prisma generate`, then `prisma migrate deploy` **only when** `VERCEL_ENV=production`, then `tsc`.
 
-Outputs:
-
-- `backend/dist/index.js`
-- `backend/dist/worker.js`
-- `frontend/dist/` (Vercel)
+Frontend project: Root Directory `frontend`. Requires `VITE_API_URL` = the API Vercel origin.
 
 ## 2. Database migration
 
-The API start command is `npm run start:api`, which runs `npm run release:migrate` then the API process. That is `prisma migrate deploy` only.
+Production Vercel builds run `prisma migrate deploy` (via `scripts/migrate-deploy.ts`). Preview builds do not.
 
-Never run:
+Never run `prisma migrate dev`, `prisma migrate reset`, or `npm run db:reset` against production.
 
-- `prisma migrate dev`
-- `prisma migrate reset`
-- `npm run db:reset`
-
-`DATABASE_URL` = Neon pooled runtime URL. `DIRECT_URL` = Neon direct URL (required in production; no fallback).
-
-Do **not** run migrations from the worker service.
-
-## 3. API startup
-
-After a successful migrate:
+You can also migrate locally with production env:
 
 ```text
-node backend/dist/index.js
+npm run release:migrate
 ```
 
-Health check: `GET /api/health/ready`
+## 3. API
 
-## 4. Worker startup
+The Express app is exported from `backend/api/index.ts`. All existing `/api/*` routes are unchanged. Local:
 
 ```text
-node backend/dist/worker.js
+npm run dev:backend
 ```
 
-The worker does not migrate.
+still uses `node`/`tsx` `src/index.ts` (listens on `PORT`).
+
+Health: `GET /api/health/live`, `GET /api/health/ready`, `GET /api/health`.
+
+## 4. Worker / jobs
+
+The in-process loop in `src/worker.ts` **cannot run as a Vercel Function** (no long-lived process, 2s poll).
+
+Serverless substitute: Vercel Cron calls `GET /api/internal/worker/tick` with `Authorization: Bearer $CRON_SECRET`. That runs the same tick (heartbeat, hold expiry, jobs, medication reminders, notifications).
+
+Limits:
+
+- Vercel Hobby crons run **once per day** (not every minute).
+- Pro crons can run every minute; CareFlow’s local worker polls every **2 seconds**.
+- Function `maxDuration` is 10s on Hobby and up to 60s here; a large job batch may time out.
+- Worker heartbeat stale window is 15s, so `/api/health` may show `BACKGROUND_WORKER` UNAVAILABLE when only cron is used. Booking still works (expired holds are treated as available when listing slots).
+
+Optional: keep `render.yaml` **worker-only** service (`npm run start:worker`) for the original 2s loop.
 
 ## First deployment order
 
-1. Create Neon database. Copy pooled URL → `DATABASE_URL`, direct URL → `DIRECT_URL`.
-2. Create Render API + worker from `render.yaml` (or connect this GitHub repo). Fill dashboard secrets (`sync: false` values).
-3. Render builds, then the API start command migrates and listens. Confirm `GET https://<api>/api/health/ready` returns 200.
-4. Confirm the worker is running.
-5. Deploy the frontend on Vercel (`VITE_API_URL` = Render API origin, `FRONTEND_URL` / `CORS_ORIGIN` = Vercel origin).
+1. Neon: pooled URL → `DATABASE_URL`, direct URL → `DIRECT_URL`.
+2. Vercel API project (Root Directory `backend`). Set production env (below). Deploy.
+3. Confirm `GET https://<api>/api/health/ready` returns 200.
+4. Vercel frontend (Root Directory `frontend`): `VITE_API_URL=https://<api>`.
+5. Set `FRONTEND_URL` and `CORS_ORIGIN` to the frontend origin. Set `GOOGLE_REDIRECT_URI` to `https://<api>/api/integrations/google/callback` if using Calendar.
+6. Set `CRON_SECRET` (Vercel can generate this for Cron). Confirm jobs if you rely on cron or run the optional Render worker.
+
+## Environment (API project)
+
+Required in production:
+
+- `NODE_ENV=production`, `APP_ENV=production`
+- `JWT_SECRET`, `FRONTEND_URL`, `CORS_ORIGIN`
+- `DATABASE_URL`, `DIRECT_URL`
+- `DEMO_MODE=false`, `ENABLE_DEMO_SIMULATION=false`
+
+Optional: `CRON_SECRET`, Google/AI/email keys.

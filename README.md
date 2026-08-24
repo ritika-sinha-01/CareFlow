@@ -198,12 +198,12 @@ Copy `VITE_CLINIC_TIMEZONE=Asia/Kolkata` into `frontend/.env` if you want the UI
 
 Intended hosting:
 
-- **Vercel** — frontend (`frontend/`, Vite). `vercel.json` rewrites SPA routes to `index.html`.
-- **Render web service (Starter)** — build: `npm ci --include=dev && npm run db:generate && npm run build -w backend`. Start: `npm run start:api` (`prisma migrate deploy`, then `node backend/dist/index.js`).
-- **Render worker (Starter)** — same build. Start: `npm run start:worker` (`node backend/dist/worker.js`). Does not migrate.
-- **Neon** — PostgreSQL. Runtime `DATABASE_URL` is the pooled URL. `DIRECT_URL` is required in production (direct URL for `prisma migrate deploy`). There is no production fallback to `DATABASE_URL`.
+- **Vercel (frontend)** — Root Directory `frontend`. `vercel.json` rewrites SPA routes to `index.html`. Set `VITE_API_URL` to the API origin.
+- **Vercel (API)** — Root Directory `backend`. Express is exported as a serverless function (`backend/api/index.ts`).
+- **Worker** — Vercel Cron `GET /api/internal/worker/tick`, or optional Render worker (`render.yaml` worker-only). A 2-second poll loop cannot run on Vercel Functions.
+- **Neon** — `DATABASE_URL` pooled; `DIRECT_URL` required in production for `prisma migrate deploy`.
 
-Starter does not support `preDeployCommand`. Migrations run automatically on API start via `npm run start:api` (`prisma migrate deploy` only). Do **not** run `prisma migrate dev` or `prisma migrate reset` in production.
+Production API builds run `prisma migrate deploy`. Do **not** run `prisma migrate dev` or `prisma migrate reset` in production.
 
 Step-by-step: [docs/deploy.md](docs/deploy.md).
 

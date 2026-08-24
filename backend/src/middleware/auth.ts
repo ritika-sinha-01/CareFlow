@@ -33,6 +33,10 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction): 
 
   try {
     const token = header.slice("Bearer ".length);
+    if (env.CRON_SECRET && token === env.CRON_SECRET) {
+      next();
+      return;
+    }
     const payload = jwt.verify(token, env.JWT_SECRET) as AuthUser;
     req.user = { id: payload.id, email: payload.email, role: payload.role };
     next();

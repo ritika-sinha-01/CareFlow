@@ -70,4 +70,9 @@ describe("liveness and readiness endpoints", () => {
       false,
     );
   });
+
+  it("rejects unauthenticated worker ticks", async () => {
+    const response = await request(app).get("/api/internal/worker/tick");
+    expect(response.status).toBe(401);
+  });
 });

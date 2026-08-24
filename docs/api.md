@@ -21,6 +21,7 @@ Base path: `/api`. Authenticated routes send `Authorization: Bearer <jwt>`.
 | GET | `/health` | Diagnostic rollup. Components `OPERATIONAL` / `DEGRADED` / `UNAVAILABLE`. Includes `clinicTimezone`. Calendar is `optional: true`. 503 only when overall status is `UNAVAILABLE`. Worker down is `DEGRADED`, not a failed liveness check. |
 | GET | `/health/live` | Process is alive. Does not check database, worker, AI, email, or calendar. Always 200 while the API process is running. |
 | GET | `/health/ready` | Database reachable and occupancy unique index present. 503 if either required dependency is down. Does **not** require worker, AI, email, or Google Calendar. |
+| GET | `/internal/worker/tick` | Vercel Cron / operator. `Authorization: Bearer $CRON_SECRET`. Runs one background-job tick. 401 if the secret is missing or wrong. |
 | POST | `/auth/register` | Patient only. Rate-limited. |
 | POST | `/auth/login` | Rate-limited. |
 | GET | `/auth/me` | Current session. |

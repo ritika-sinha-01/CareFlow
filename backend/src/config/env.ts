@@ -110,6 +110,7 @@ const envSchema = z.object({
   GOOGLE_REDIRECT_URI: optionalString,
   DEMO_MODE: booleanFromString,
   ENABLE_DEMO_SIMULATION: booleanFromString,
+  CRON_SECRET: optionalString,
 });
 
 type ParsedEnv = z.infer<typeof envSchema>;

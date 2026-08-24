@@ -1,23 +1,11 @@
 import { env } from "./config/env.js";
 import { prisma } from "./db/prisma.js";
-import { writeWorkerHeartbeat } from "./jobs/heartbeat.service.js";
-import { expireStaleHolds } from "./services/hold-expiry.service.js";
-import { processDueJobs } from "./services/job.service.js";
-import { processDueMedicationReminders } from "./services/medication-reminder.service.js";
-import { processDueNotifications } from "./services/notification.service.js";
+import { runWorkerTick } from "./jobs/worker-tick.js";
 
 const SHUTDOWN_MS = 10_000;
 let shuttingDown = false;
 let tickInFlight: Promise<void> | null = null;
 let wakeSleep: (() => void) | null = null;
-
-async function tick(): Promise<void> {
-  await writeWorkerHeartbeat();
-  await expireStaleHolds();
-  await processDueJobs();
-  await processDueMedicationReminders();
-  await processDueNotifications();
-}
 
 function sleepOrShutdown(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -33,7 +21,7 @@ async function loop(): Promise<void> {
   console.log("CareFlow worker started");
   while (!shuttingDown) {
     try {
-      tickInFlight = tick();
+      tickInFlight = runWorkerTick();
       await tickInFlight;
     } catch (error) {
       console.error("[worker]", error instanceof Error ? error.message : "tick failed");

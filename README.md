@@ -52,6 +52,21 @@ Built for patients, doctors, and clinic administrators, CareFlow combines a six-
 
 Patients book through a six-step flow with a five-minute hold. Doctors receive pre-visit briefings, write notes, send prescriptions, and complete visits. Admins manage leave, occupancy conflicts, notifications, and system health. Demo failure simulation can show reviewers what happens when AI, email, calendar, booking, or leave resolution fail — without taking the clinic down.
 
+## Technical Highlight: Concurrency-Safe Booking
+
+CareFlow does not use a simple:
+
+`check availability → insert appointment`
+
+flow.
+
+Instead, appointment occupancy is protected at the database level.
+
+For active appointments, PostgreSQL enforces uniqueness on:
+
+```text
+(doctor_id, occupancy_key)
+
 ## Current status
 
 Working now:
